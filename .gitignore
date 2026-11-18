@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+enclosure/capsule/stl
+tools/render/
+docs/
+simulator/
+tools/
+Claude outputs/
+.pio/
+.vscode/
