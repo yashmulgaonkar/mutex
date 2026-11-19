@@ -92,11 +92,6 @@ mcu_lip     = 1.0;   // the board sits this far below the spigot face; lips and 
 mcu_clr     = 0.2;   // pocket clearance along the long (castellated) edges
 mcu_end_clr = 0.1;   // pocket clearance at the USB and antenna ends
 mcu_lip_o   = 0.6;   // how far the two fixed lips reach over the PCB at the USB end
-mcu_latch_z = -3.3;  // snap-latch barb centre (Z): on the antenna-end edge, between the ceramic
-                     // antenna and pad 14 (with the board as in the photo: wired pads 5V..6 on top, +Z)
-mcu_hook_w  = 4;     // snap hook width (Z); an upright plate rooted deep in the spigot, flexing toward
-mcu_hook_t  = 1.0;   //   the front, so it prints cleanly with the cap dome-down. Thickness,
-mcu_hook_root = 0.5; //   and root depth (X) - long enough to keep the bending strain ~2.5 %
 disp_stop_l = 5.5;   // display stoppers: posts standing this far off the cap face, tips on the first
 disp_stop_w = 2;     //   display PCB's left edge (above and below the display modules); width in Z
 mcu_wire_ch = 3;    // wire channels beside both long edges, above the PCB, for the soldered pads
@@ -195,10 +190,6 @@ pcb_y1       = pcb_y0 + pcb_t;                 // PCB back face
 mcu_top_x    = spigot - mcu_lip;               // PCB component side (recessed into the spigot)
 mcu_x0       = mcu_top_x - mcu_t;              // PCB back face = pocket floor
 mcu_y0       = mcu_back_y - mcu_l;             // PCB front edge (antenna end)
-mcu_beam_y   = mcu_y0 - mcu_end_clr - 0.4;     // snap hook front face (0.4 behind the rigid end stops)
-mcu_slot_y   = mcu_beam_y - mcu_hook_t - latch_gap;   // back of the hook's flex slot
-mcu_hook_z0  = mcu_latch_z - mcu_hook_w / 2;   // hook extent across the board (Z)
-mcu_hook_z1  = mcu_latch_z + mcu_hook_w / 2;
 usb_cx       = mcu_top_x + usb_h_above;        // USB-C centre along X (model)
 usb_hole_cx  = usb_cx + usb_x_adj;             // cable opening centre along X (as fitted)
 brace_yc     = mcu_y0 + mcu_brace_y;           // cross-brace centre (Y)
@@ -243,10 +234,6 @@ assert(win_h + 2 < 2 * sqrt(R * R - flat * flat), "Window taller than the flat f
 assert(sqrt(mcu_back_y * mcu_back_y + (mcu_w / 2) * (mcu_w / 2)) < ri - 0.2,
        "ESP32-S3-Zero corners hit the tube wall: reduce mcu_back_y.");
 assert(mcu_back_y - mcu_l > inner_flat_y + 0.5, "ESP32-S3-Zero hits the front wall: increase mcu_back_y.");
-assert(mcu_slot_y > inner_flat_y + acrylic_t + 0.3 + 0.8,
-       "ESP32 latch slot runs into the window-strip relief: increase mcu_back_y.");
-assert(mcu_hook_z1 + 0.6 < mcu_w / 2 - 1 && mcu_hook_z0 - 0.6 > -mcu_w / 2 + 1,
-       "ESP32 snap hook wider than the board edge: reduce mcu_hook_w or move mcu_latch_z.");
 assert(spigot + disp_stop_l < disp_x0 - 0.5 - 0.1,
        "Display stoppers would run into the body's PCB rails: shorten disp_stop_l.");
 assert(win_seat <= spigot && win_seat > 2, "win_seat must lie inside the spigot.");
@@ -492,20 +479,18 @@ module usb_hole() {
 // ----------------------------------------------------------------------------
 //  LEFT CAP (solid dome; the inner face carries the ESP32-S3-Zero)
 //  The board is sunk into a pocket in the spigot face, components facing into
-//  the capsule, USB-C toward the back, and held on three sides:
+//  the capsule, USB-C toward the back, and held by:
 //    - USB end: two fixed lips over the PCB corners beside the receptacle,
-//    - antenna end: a snap hook (an upright plate rooted deep in the spigot,
-//      barb between the ceramic antenna and pad 14); rigid stops beside it
-//      take the push when a USB cable is plugged in,
+//    - antenna end: the solid pocket wall (takes the push of a USB plug),
 //    - long edges: pocket walls up to the PCB top, plus wire channels above
 //      them so the soldered pads and wires stay clear,
-//    - and the separate mcu_brace screwed across it.
-//  Fit: hook the USB end under the lips, press the antenna end down until the
-//  hook clicks. Remove: push a pin into the slot behind the hook.
+//    - the separate mcu_brace screwed across it (the main clamp).
+//  Fit: hook the USB end under the lips, lay the board in, screw the brace on.
 //  Two display stoppers stand disp_stop_l off the face and hold the first
-//  display PCB's left edge, so the displays can't slide toward the cap.
-//  Print DOME-DOWN with supports under the dome (the stoppers rise from the
-//  face); everything on the face side then prints without supports.
+//  display PCB's left edge, so the displays can't slide toward the cap; a 45
+//  degree gusset under each keeps them printable.
+//  Print standing on the flat front face (USB end up). Add a support under
+//  the spigot's front flat (2.2 mm above the bed, 5 mm out from the dome).
 // ----------------------------------------------------------------------------
 module left_cap() {
     difference() {
@@ -529,9 +514,6 @@ module left_cap() {
         // the USB-C receptacle overhangs the PCB's back edge
         translate([mcu_top_x - eps, mcu_back_y - 1, -usb_w / 2 - 0.3])
             cube([spigot - mcu_top_x + 1, usb_over + 2.2, usb_w + 0.6]);
-        // snap hook pit: slot behind, 0.4 gap in front, 0.6 slits at the sides, down to the root
-        translate([mcu_hook_root, mcu_slot_y, mcu_hook_z0 - 0.6])
-            cube([spigot - mcu_hook_root + 1, mcu_y0 - mcu_end_clr - mcu_slot_y + eps, mcu_hook_w + 1.2]);
         // the cable opening continues through the spigot
         usb_hole();
         // pilots for the 3 cap screws (through the body wall, like the encoder carrier)
@@ -544,19 +526,15 @@ module left_cap() {
     for (s = [-1, 1])
         translate([mcu_top_x + 0.1, mcu_back_y - mcu_lip_o, s > 0 ? usb_w / 2 + 0.3 : -(mcu_w / 2 - 1.6)])
             cube([spigot - mcu_top_x - 0.1, mcu_lip_o + mcu_end_clr + 0.3, mcu_w / 2 - 1.6 - usb_w / 2 - 0.3]);
-    // snap hook: upright plate, rooted at the bottom of its pit
-    translate([mcu_hook_root - eps, mcu_beam_y - mcu_hook_t, mcu_hook_z0])
-        cube([spigot - mcu_hook_root + eps, mcu_hook_t, mcu_hook_w]);
-    // hook barb (2 mm wide, centred on mcu_latch_z): lead-in ramp from the face, catches the PCB top
-    translate([0, 0, mcu_latch_z - 1])
-        linear_extrude(2)
-            polygon([[spigot, mcu_beam_y - 0.3], [spigot, mcu_beam_y],
-                     [mcu_top_x + 0.1, mcu_beam_y + 0.4 + mcu_end_clr + mcu_lip_o],
-                     [mcu_top_x + 0.1, mcu_beam_y - 0.3]]);
-    // display stoppers: above and below the display modules, on the first display PCB's left edge
+    // display stoppers: above and below the display modules, on the first display PCB's left edge,
+    // each with a 45 deg gusset on its front side (the down side when printed on the flat front)
     for (s = [-1, 1])
-        translate([spigot - eps, pcb_y0 - 0.8, s > 0 ? mcu_w / 2 + mcu_wire_ch + 0.4 : -(mcu_w / 2 + mcu_wire_ch + 0.4 + disp_stop_w)])
-            cube([disp_stop_l + eps, pcb_y1 - pcb_y0 + 1.6, disp_stop_w]);
+        translate([0, 0, s > 0 ? mcu_w / 2 + mcu_wire_ch + 0.4 : -(mcu_w / 2 + mcu_wire_ch + 0.4 + disp_stop_w)]) {
+            translate([spigot - eps, pcb_y0 - 0.8, 0]) cube([disp_stop_l + eps, pcb_y1 - pcb_y0 + 1.6, disp_stop_w]);
+            linear_extrude(disp_stop_w)
+                polygon([[spigot - eps, pcb_y0 - 0.8 + eps], [spigot - eps, pcb_y0 - 0.8 - disp_stop_l],
+                          [spigot + disp_stop_l, pcb_y0 - 0.8 + eps]]);
+        }
 }
 
 // ----------------------------------------------------------------------------
@@ -748,8 +726,8 @@ module print_plate() {
     translate([0, 0, bulk_x0]) rotate([0, 90, 0]) body();
     // encoder carrier: outer face down
     translate([0, -60, Lb]) rotate([0, 90, 0]) translate([0, 0, 0]) encoder_carrier();
-    // left cap: dome down (needs supports under the dome), face and display stoppers up
-    translate([70, 0, cap_dome]) rotate([0, -90, 0]) left_cap();
+    // left cap: standing on its flat front face, USB end up (support under the spigot's front flat)
+    translate([70, 0, flat]) rotate([90, 0, 0]) left_cap();
     // ESP32 cross-brace: top face down
     translate([70, -45, brace_x1]) rotate([0, 90, 0]) translate([0, -brace_yc, 0]) mcu_brace();
     // light ring flat

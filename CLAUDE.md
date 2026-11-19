@@ -56,15 +56,15 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 ## Enclosure: ESP32-S3-Zero mount
 - The board is sunk into a pocket in the **left cap's spigot face** (spigot 7 mm, PCB top 1 mm below the face),
   components facing into the capsule, USB-C toward the back. Held by two fixed lips at the USB end (beside the
-  receptacle), a snap hook at the antenna end (upright 1 mm plate rooted 0.5 mm from the cap's shoulder,
-  flexing toward the front; barb at `mcu_latch_z`, between the antenna and pad 14) with rigid stops beside it
-  for USB plug force, and wire channels along both long edges. Hook the USB end under the lips, press the
-  antenna end down until it clicks. The spigot is cut back to `win_seat` (5) along the window strip so the
-  acrylic blank is unchanged.
+  receptacle), the solid pocket wall at the antenna end (takes USB plug force), wire channels along both long
+  edges, and the `mcu_brace` below. (The snap latch/hook at the antenna end was dropped: it can't print in
+  the cap's print orientation and the brace does the clamping.) The spigot is cut back to `win_seat` (5)
+  along the window strip so the acrylic blank is unchanged.
 - Two display stoppers stand `disp_stop_l` = 5.5 mm off the cap face (measured gap on the real build; the model
   has 6.25), above and below the display modules, on the first display PCB's left edge, so the displays can't
-  slide toward the cap. Because they rise from the face, the cap now prints **dome-down with supports under
-  the dome**; the face-side features (lips, hook, pocket) print without supports in that orientation.
+  slide toward the cap. Each has a 45 deg gusset on its front side.
+- The cap prints **standing on its flat front face, USB end up** (stoppers horizontal, gussets underneath);
+  add a support under the spigot's front flat (2.2 mm above the bed, 5 mm out from the dome).
 - The lips/latch proved too small on the first print, so a separate `mcu_brace` part clamps the board: a bar
   across it at `mcu_brace_y` (12.2 mm from the antenna end, over pad 2, clear of the buttons), two fingers on
   the PCB's bare 2 mm edge strips (0.1 mm preload), feet screwed to the cap face with 2 M2 x 6 flat heads,
