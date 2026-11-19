@@ -54,25 +54,54 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   (`monitor_depth`, `shaft_len`, `enc_hole_spacing`, `disp_d`).
 
 ## Enclosure: ESP32-S3-Zero mount
-- The board sits flat in a 0.6 mm pocket on the **left cap's inner face** (crush ribs for a press fit),
-  components facing into the capsule, USB-C toward the back. The cap's spigot is solid.
-- The USB-C cable exits through a 12.5 × 7.5 mm opening in the **back wall** of the body (cut through the
-  cap spigot too). Displays start `antenna_gap` (3 mm) after the board's tallest part.
+- The board is sunk into a pocket in the **left cap's spigot face** (spigot 7 mm, PCB top 1 mm below the face),
+  components facing into the capsule, USB-C toward the back. Held by two fixed lips at the USB end (beside the
+  receptacle), a snap hook at the antenna end (upright 1 mm plate rooted 0.5 mm from the cap's shoulder,
+  flexing toward the front; barb at `mcu_latch_z`, between the antenna and pad 14) with rigid stops beside it
+  for USB plug force, and wire channels along both long edges. Hook the USB end under the lips, press the
+  antenna end down until it clicks. The spigot is cut back to `win_seat` (5) along the window strip so the
+  acrylic blank is unchanged.
+- Two display stoppers stand `disp_stop_l` = 5.5 mm off the cap face (measured gap on the real build; the model
+  has 6.25), above and below the display modules, on the first display PCB's left edge, so the displays can't
+  slide toward the cap. Because they rise from the face, the cap now prints **dome-down with supports under
+  the dome**; the face-side features (lips, hook, pocket) print without supports in that orientation.
+- The lips/latch proved too small on the first print, so a separate `mcu_brace` part clamps the board: a bar
+  across it at `mcu_brace_y` (12.2 mm from the antenna end, over pad 2, clear of the buttons), two fingers on
+  the PCB's bare 2 mm edge strips (0.1 mm preload), feet screwed to the cap face with 2 M2 x 6 flat heads,
+  bar spanning the wire channels. It sits wholly inside the capsule; the body is unaffected (verified).
+- Window: `acr_clr` = 0.3 mm thickness clearance between the front wall and the display faces (the display
+  PCB rails moved back 0.3).
+- The cap is fixed with 3 M2 x 6 flat-head screws through countersunk holes in the body wall (top, bottom,
+  back-lower at 320 deg; straight back is the USB opening), 3 mm into the spigot (`cap_screw_x`), same module
+  as the carrier screws (`radial_screws`).
+- The USB-C cable exits through a 12.5 × 8.5 mm opening in the **back wall** of the body (cut through the
+  cap spigot too). On the first fit the real port sat 1-2 mm further toward the displays than the modelled
+  `usb_cx` (7.62), so the opening is shifted by `usb_x_adj` = 1.5 (centre x = 9.12); tune after measuring.
+  Re-checked against the user's STEP (`enclosure/capsule/stl/ESP32-S3-Zero_v2-*.stp`, local only): the port
+  mouth centre is 1.67 above the PCB top (model 1.62), so the offset is not in the CAD data - it comes from the
+  print or the assembly. No board parts sit under the cap's lips or latch barb. Displays start `antenna_gap` (3 mm) after the board's tallest part.
 - Dimensions came from Waveshare's STEP model (`ESP32-S3-Zero_v2`), resolved with an assembly-transform parser.
 
 ## Enclosure: NeoPixel ring at the seam
 - Adafruit 12-LED NeoPixel Ring (PID 1643): 36.82 OD / 23.36 ID / 2.97 mm thick (from Adafruit's STEP model).
-- It sits flat against the bulkhead's outer face, LEDs toward the knob, inside a pocket in the round
-  `light_ring` diffuser (`neo_ring = true`; diffuser 5.3 mm, 2 mm wall in front of the LEDs; print white/clear PETG).
-- Its 3 wires (5V, GND, DIN) go back through the bulkhead light slots. Firmware support is not written yet.
-- Shaft engagement in the knob is 10.9 mm with the default 22 mm shaft.
+- It snaps into a 2.3 mm seat in the encoder carrier's outer face (the carrier's outer band is round): three
+  arc snap latches at 30/150/270 deg, barbs flush with the face so the carrier still prints face down; the hub
+  inside the ring's ID centres it. The seat adds 2.3 mm to the carrier (`plate_t` = `bulkhead` + `neo_seat`).
+- The round `light_ring` diffuser (`neo_ring = true`) is 8.3 mm (5.3 + `diff_extra` 3): an open light-mixing
+  chamber over the LEDs, 2 mm front and outer walls; print white/clear PETG. A 1 mm centring spigot on its
+  back drops into a counterbore in the carrier hub, so it stays concentric while gluing.
+- Its 3 wires (DIN, GND, 5V) go through dedicated slots in the seat floor at `neo_pad_a` (59/301/240 deg,
+  measured from Adafruit's photo), which also clocks the ring; a 1 mm groove under the pad circle clears
+  the solder joints. Firmware support is not written yet.
+- Shaft engagement in the knob is 5.6 mm with the default 22 mm shaft (min 4 enforced by an assert).
 
 ## Enclosure: encoder carrier (serviceable right end)
 - The body is an open tube. The encoder mounts on a separate `encoder_carrier` (end plate + 4 standoffs):
   screw the encoder to it on the bench (M2.5 x 5-6 self-tappers from the encoder side; pilots are blind so
   they can't reach the NeoPixel ring), slide the carrier into the body's right end (spigot keyed by the flat
-  front), fix it with 2 M2.5 x 6 self-tappers through the body wall from the bottom and the back.
-- Then the NeoPixel ring + diffuser go on the carrier's outer face, then the knob.
+  front), fix it with 3 M2 x 6 flat-head screws through countersunk holes in the body wall (back, top,
+  bottom; heads flush). The top one goes into the display PCB stop block.
+- Then snap the NeoPixel ring into the carrier's seat, glue the diffuser on, then fit the knob.
 - Heat-set bosses moved behind the display PCB (`boss_y = 5`): in front of it they blocked the 27.94 mm PCB's
   rails. `front_offset = -4` keeps the clip screws over the monitor top. An assert guards the boss/rail clash.
 
