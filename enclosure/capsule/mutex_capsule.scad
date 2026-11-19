@@ -62,6 +62,7 @@ acr_clr    = 0.3; // thickness clearance for the window (between the front wall 
 win_len    = pcb_len - 2;  // visible window opening (151 mm for three wings)
 win_h      = 18;
 win_r      = 2;     // window corner radius
+win_dx     = -1;    // window opening shift along X (- = toward the left cap); bosses/clip stay on win_cx
 
 /* [Encoder (PID 5880)] */
 enc_board        = 25.4;  // board is 1" square
@@ -130,6 +131,7 @@ car_screw_l= 6;     // screw length (flat head: overall length)
 car_screw_d= 1.7;   // pilot for M2 screws into the carrier bosses
 car_clear_d= 2.3;   // clearance hole for them in the body wall
 car_csk_d  = 4.0;   // 90 deg countersink in the body wall (M2 flat head is 3.8)
+car_csk_deep = 1.0; // countersink sunk this far into the wall, with a car_csk_d recess above it
 cap_screw_a= [90, 270, 320]; // left-cap screws (same M2 x 6 flat head): top, bottom, back-lower
                              // (straight back is taken by the USB-C opening)
 cap_screw_x= 3;     // their position along X, into the cap's spigot (behind the ESP32 pocket floor)
@@ -199,6 +201,7 @@ brace_fz     = mcu_w / 2 + mcu_wire_ch + 0.4 + mcu_brace_foot / 2;   // foot cen
 disp_x0      = mcu_top_x + mcu_comp_h + 1 + antenna_gap;
 disp_x1      = disp_x0 + pcb_len;
 win_cx       = (disp_x0 + disp_x1) / 2;
+win_open_cx  = win_cx + win_dx;                // window opening centre (as fitted)
 board_back_x = disp_x1 + 2;                    // encoder PCB, back face
 board_front_x= board_back_x + pcb_t;
 bulk_x0      = board_front_x + enc_standoff;   // bulkhead inner face
@@ -222,11 +225,12 @@ cradle_gap   = 2;
 clip_zc      = clip_wall + cradle_gap + R;     // capsule axis height above monitor top
 clip_ax_y    = -monitor_depth / 2 + flat + front_offset;
 
-assert(acr_x0 + 2 < win_cx - win_len / 2 && acr_x0 + acr_len - 2 > win_cx + win_len / 2,
+assert(acr_x0 + 2 < win_open_cx - win_len / 2 && acr_x0 + acr_len - 2 > win_open_cx + win_len / 2,
        "Window acrylic does not overlap the opening by 2 mm at both ends.");
 assert(bulk_x0 - car_boss > disp_x1 + 0.3 && bulk_x0 - car_boss > disp_x0 - 0.5 + pcb_len + 1 + 0.05,
        "Display PCB stop overlaps the displays or the rails: adjust car_boss.");
-assert(pcb_h / 2 - 2 > disp_h / 2 + 0.3, "Display PCB stop would touch the display modules.");
+assert(enc_board / 2 + 0.4 < pcb_h / 2 - 0.5 && enc_board / 2 + 0.4 > disp_h / 2 + 0.3,
+       "Display PCB end stops miss the display PCB edge or touch the display modules.");
 assert(tip_local - max(bush_in_knob, 0) >= 4, str("Too little D-shaft left in the knob past the collar: ", tip_local - max(bush_in_knob, 0), " mm."));
 assert(tip_local >= 4, str("Encoder shaft too short to reach the knob: only ", tip_local,
        " mm engagement. Increase shaft_len or reduce ring_t / neo_t / enc_standoff."));
@@ -342,11 +346,11 @@ module body() {
             }
         }
         // window opening
-        translate([win_cx, inner_flat_y + eps, 0]) rotate([90, 0, 0])
+        translate([win_open_cx, inner_flat_y + eps, 0]) rotate([90, 0, 0])
             linear_extrude(wall + 2)
                 offset(r = win_r) square([win_len - 2 * win_r, win_h - 2 * win_r], center = true);
         // small outside chamfer around the window
-        translate([win_cx, -flat + 0.6, 0]) rotate([90, 0, 0])
+        translate([win_open_cx, -flat + 0.6, 0]) rotate([90, 0, 0])
             linear_extrude(1, scale = [(win_len + 2) / win_len, (win_h + 2) / win_h])
                 offset(r = win_r) square([win_len - 2 * win_r, win_h - 2 * win_r], center = true);
         // countersunk clearance holes for the 3 carrier screws (back, top, bottom)
@@ -385,9 +389,9 @@ module radial_screws(x, angles, blind) {
             translate([x, R + 1, 0]) rotate([90, 0, 0]) cylinder(d = car_screw_d, h = car_screw_l + 1.5);
         else {       // body wall: clearance + countersink, head flush with the outside
             translate([x, R + 1, 0]) rotate([90, 0, 0]) cylinder(d = car_clear_d, h = wall + 2);
-            translate([x, R - (car_csk_d - 2) / 2, 0]) rotate([-90, 0, 0])
+            translate([x, R - car_csk_deep - (car_csk_d - 2) / 2, 0]) rotate([-90, 0, 0])
                 cylinder(d1 = 2, d2 = car_csk_d, h = (car_csk_d - 2) / 2 + eps);
-            translate([x, R, 0]) rotate([-90, 0, 0]) cylinder(d = car_csk_d, h = 2);
+            translate([x, R - car_csk_deep, 0]) rotate([-90, 0, 0]) cylinder(d = car_csk_d, h = car_csk_deep + 2);
         }
 }
 module car_screws(blind) { radial_screws(car_x, car_screw_a, blind); }
@@ -396,7 +400,8 @@ module cap_screws(blind) { radial_screws(cap_screw_x, cap_screw_a, blind); }
 module encoder_carrier() {
     difference() {
         union() {
-            translate([bulk_x0, 0, 0]) prism(R, flat, bulkhead);                       // end plate
+            if (neo_ring) translate([bulk_x0, 0, 0]) xcyl(2 * R, bulkhead);           // end plate: round, so the ring
+            else translate([bulk_x0, 0, 0]) prism(R, flat, bulkhead);                 // seat has a floor at the front
             if (neo_ring) translate([neo_seat_x - eps, 0, 0]) xcyl(2 * R, neo_seat + eps);   // round ring band
             translate([bulk_x0 - car_spigot, 0, 0]) difference() {                     // locating spigot
                 prism(ri - clr, fi - clr, car_spigot + eps);
@@ -411,15 +416,12 @@ module encoder_carrier() {
             }
             standoffs();
             // display PCB end stops (bottom + top): the last FeatherWing's PCB edges land on these.
-            // Stepped so they stay clear of the 25.4 mm encoder PCB right behind them.
+            // They stay 0.4 mm outside the 25.4 mm encoder PCB (no overhang), and catch the outer
+            // pcb_h/2 - enc_board/2 - 0.4 = 0.87 mm of the display PCB's top and bottom edges.
             for (m = [0, 1]) mirror([0, 0, m]) intersection() {
                 translate([bulk_x0 - car_boss, 0, 0]) prism(ri - clr, fi - clr, car_boss + eps);
-                union() {
-                    translate([bulk_x0 - car_boss, -car_boss_w / 2, -R])
-                        cube([board_back_x - 0.3 - (bulk_x0 - car_boss), car_boss_w, R - (pcb_h / 2 - 2)]);
-                    translate([bulk_x0 - car_boss, -car_boss_w / 2, -R])
-                        cube([car_boss, car_boss_w, R - enc_board / 2 - 0.4]);
-                }
+                translate([bulk_x0 - car_boss, -car_boss_w / 2, -R])
+                    cube([car_boss, car_boss_w, R - enc_board / 2 - 0.4]);
             }
         }
         // encoder body clearance

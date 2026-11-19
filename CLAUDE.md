@@ -70,7 +70,10 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   the PCB's bare 2 mm edge strips (0.1 mm preload), feet screwed to the cap face with 2 M2 x 6 flat heads,
   bar spanning the wire channels. It sits wholly inside the capsule; the body is unaffected (verified).
 - Window: `acr_clr` = 0.3 mm thickness clearance between the front wall and the display faces (the display
-  PCB rails moved back 0.3).
+  PCB rails moved back 0.3). The window opening is shifted `win_dx` = -1 mm toward the left cap
+  (`win_open_cx`); the bosses and clip stay on `win_cx`.
+- All 6 body countersinks (cap + carrier screws) are sunk `car_csk_deep` = 1 mm into the 2 mm wall with a
+  4 mm recess above, because the printed heads stood proud.
 - The cap is fixed with 3 M2 x 6 flat-head screws through countersunk holes in the body wall (top, bottom,
   back-lower at 320 deg; straight back is the USB opening), 3 mm into the spigot (`cap_screw_x`), same module
   as the carrier screws (`radial_screws`).
@@ -84,7 +87,8 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 
 ## Enclosure: NeoPixel ring at the seam
 - Adafruit 12-LED NeoPixel Ring (PID 1643): 36.82 OD / 23.36 ID / 2.97 mm thick (from Adafruit's STEP model).
-- It snaps into a 2.3 mm seat in the encoder carrier's outer face (the carrier's outer band is round): three
+- It snaps into a 2.3 mm seat in the encoder carrier's outer face (the carrier's end plate and outer band are
+  round, so the seat has a floor where the ring overhangs the flat front): three
   arc snap latches at 30/150/270 deg, barbs flush with the face so the carrier still prints face down; the hub
   inside the ring's ID centres it. The seat adds 2.3 mm to the carrier (`plate_t` = `bulkhead` + `neo_seat`).
 - The round `light_ring` diffuser (`neo_ring = true`) is 8.3 mm (5.3 + `diff_extra` 3): an open light-mixing
@@ -102,6 +106,8 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   front), fix it with 3 M2 x 6 flat-head screws through countersunk holes in the body wall (back, top,
   bottom; heads flush). The top one goes into the display PCB stop block.
 - Then snap the NeoPixel ring into the carrier's seat, glue the diffuser on, then fit the knob.
+- The display PCB end stops on the carrier (top/bottom) stay 0.4 mm outside the encoder PCB (no overhang, so
+  the encoder drops straight onto its standoffs) and catch the outer 0.87 mm of the last display PCB's edges.
 - Heat-set bosses moved behind the display PCB (`boss_y = 5`): in front of it they blocked the 27.94 mm PCB's
   rails. `front_offset = -4` keeps the clip screws over the monitor top. An assert guards the boss/rail clash.
 
