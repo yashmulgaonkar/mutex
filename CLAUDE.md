@@ -55,7 +55,8 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 
 ## Enclosure: ESP32-S3-Zero mount
 - The board is sunk into a pocket in the **left cap's spigot face** (spigot 7 mm, PCB top 1 mm below the face),
-  components facing into the capsule, USB-C toward the back. Held by two fixed lips at the USB end (beside the
+  components facing into the capsule, USB-C toward the back. The pocket has 0.6 mm extra length at the antenna
+  end (`mcu_ant_clr`; 0.1 printed too tight). Held by two fixed lips (0.6 mm reach; the real board has small parts further in) at the USB end (beside the
   receptacle), the solid pocket wall at the antenna end (takes USB plug force), wire channels along both long
   edges, and the `mcu_brace` below. (The snap latch/hook at the antenna end was dropped: it can't print in
   the cap's print orientation and the brace does the clamping.) The spigot is cut back to `win_seat` (5)
@@ -72,17 +73,19 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 - Window: `acr_clr` = 0.3 mm thickness clearance between the front wall and the display faces (the display
   PCB rails moved back 0.3). The window opening is shifted `win_dx` = -1 mm toward the left cap
   (`win_open_cx`); the bosses and clip stay on `win_cx`.
+- Window blank is **159 × 24 × 3 mm, 1 mm corners** (`acr_len`): on the real build the encoder PCB's connector
+  stops it before the body's end stop. It overlaps the opening 8 mm at the left and only just reaches the
+  right edge (-0.05 mm, accepted by the user); the asserts allow that.
 - All 6 body countersinks (cap + carrier screws) are sunk `car_csk_deep` = 1 mm into the 2 mm wall with a
   4 mm recess above, because the printed heads stood proud.
 - The cap is fixed with 3 M2 x 6 flat-head screws through countersunk holes in the body wall (top, bottom,
   back-lower at 320 deg; straight back is the USB opening), 3 mm into the spigot (`cap_screw_x`), same module
   as the carrier screws (`radial_screws`).
 - The USB-C cable exits through a 12.5 × 8.5 mm opening in the **back wall** of the body (cut through the
-  cap spigot too). On the first fit the real port sat 1-2 mm further toward the displays than the modelled
-  `usb_cx` (7.62), so the opening is shifted by `usb_x_adj` = 1.5 (centre x = 9.12); tune after measuring.
-  Re-checked against the user's STEP (`enclosure/capsule/stl/ESP32-S3-Zero_v2-*.stp`, local only): the port
-  mouth centre is 1.67 above the PCB top (model 1.62), so the offset is not in the CAD data - it comes from the
-  print or the assembly. No board parts sit under the cap's lips or latch barb. Displays start `antenna_gap` (3 mm) after the board's tallest part.
+  cap spigot too), centred at x = 7.12 (`usb_x_adj` = -0.5 from the modelled port `usb_cx` = 7.62), fitted on
+  the braced board. An earlier +1.5 shift came from the board sitting proud before the brace existed. The
+  user's STEP (`enclosure/capsule/stl/ESP32-S3-Zero_v2-*.stp`, local only) puts the port mouth centre 1.67
+  above the PCB top (model 1.62). No board parts sit under the cap's lips. Displays start `antenna_gap` (3 mm) after the board's tallest part.
 - Dimensions came from Waveshare's STEP model (`ESP32-S3-Zero_v2`), resolved with an assembly-transform parser.
 
 ## Enclosure: NeoPixel ring at the seam

@@ -58,6 +58,8 @@ pcb_t      = 1.6;
 disp_h     = 21.15;    // display module height (measure)
 disp_d     = 7.7;     // display module depth, PCB front to display face (measure)
 acrylic_t  = 3;   // smoked window thickness
+acr_len    = 159; // window blank length: fits between the left cap seat and the encoder PCB's
+                  // connector (which stops it before the body's printed end stop)
 acr_clr    = 0.3; // thickness clearance for the window (between the front wall and the display faces)
 win_len    = pcb_len - 2;  // visible window opening (151 mm for three wings)
 win_h      = 18;
@@ -91,8 +93,10 @@ usb_h_above = 1.62;  // receptacle centre above the PCB top face
 mcu_back_y  = 17;    // PCB back edge (USB end), measured from the capsule axis
 mcu_lip     = 1.0;   // the board sits this far below the spigot face; lips and latch barb are this thick
 mcu_clr     = 0.2;   // pocket clearance along the long (castellated) edges
-mcu_end_clr = 0.1;   // pocket clearance at the USB and antenna ends
-mcu_lip_o   = 0.6;   // how far the two fixed lips reach over the PCB at the USB end
+mcu_end_clr = 0.1;   // pocket clearance at the USB end
+mcu_ant_clr = 0.6;   // pocket clearance at the antenna end (0.1 was too tight on the print)
+mcu_lip_o   = 0.6;   // how far the two fixed lips reach over the PCB at the USB end (the real board has small
+                     // parts further in, not in the STEP - keep at 0.6)
 disp_stop_l = 5.5;   // display stoppers: posts standing this far off the cap face, tips on the first
 disp_stop_w = 2;     //   display PCB's left edge (above and below the display modules); width in Z
 mcu_wire_ch = 3;    // wire channels beside both long edges, above the PCB, for the soldered pads
@@ -111,9 +115,9 @@ latch_gap   = 0.8;   // flex gap behind each beam, open at the face: push a pin 
 antenna_gap = 3;     // extra space between the board's ceramic antenna and the displays
 usb_hole_w  = 12.5;  // cable opening across the capsule (Z) - fits most USB-C overmolds
 usb_hole_h  = 8.5;   // cable opening along the capsule (X) (7.5 plug overmold + 1 mm fit tolerance)
-usb_x_adj   = 1.5;   // opening shifted this far toward the displays: on the first fit the port sat 1-2 mm
-                     // further in than modelled. The STEP (mouth centre 1.67 above the PCB) matches usb_cx,
-                     // so the offset comes from the print/assembly - measure and fine-tune
+usb_x_adj   = -0.5;  // opening shift from the modelled port centre (+ = toward the displays). Fitted on the
+                     // braced board: the port sits 0.5 mm toward the cap from usb_cx (STEP: mouth centre
+                     // 1.67 above the PCB, matching usb_cx; the earlier +1.5 came from the board sitting proud)
 usb_hole_r  = 2;
 
 /* [Fit & assembly] */
@@ -219,14 +223,16 @@ tip_local    = shaft_tip_x - knob_x0;          // shaft engagement inside the kn
 bush_in_knob = board_front_x + enc_body_h + enc_bush_h - knob_x0;   // collar reach into the knob
 acr_x0       = win_seat + 0.2;                 // acrylic left end: held by the left cap's spigot
 acr_stop_x   = disp_x1 + 1.3;                  // acrylic right end stop (printed in the body)
-acr_len      = acr_stop_x - 0.2 - acr_x0;      // window blank length
 acr_h        = win_h + 6;
 cradle_gap   = 2;
 clip_zc      = clip_wall + cradle_gap + R;     // capsule axis height above monitor top
 clip_ax_y    = -monitor_depth / 2 + flat + front_offset;
 
-assert(acr_x0 + 2 < win_open_cx - win_len / 2 && acr_x0 + acr_len - 2 > win_open_cx + win_len / 2,
-       "Window acrylic does not overlap the opening by 2 mm at both ends.");
+// the left end overlaps the opening by >= 2 mm; the 159 mm blank only just reaches the opening's
+// right edge (accepted), so the right end is only checked to within 0.1 mm
+assert(acr_x0 + 2 < win_open_cx - win_len / 2 && acr_x0 + acr_len > win_open_cx + win_len / 2 - 0.1,
+       "Window acrylic does not cover the opening (2 mm overlap at the left, flush at the right).");
+assert(acr_x0 + acr_len <= acr_stop_x - 0.2, "Window blank too long for the body's end stop.");
 assert(bulk_x0 - car_boss > disp_x1 + 0.3 && bulk_x0 - car_boss > disp_x0 - 0.5 + pcb_len + 1 + 0.05,
        "Display PCB stop overlaps the displays or the rails: adjust car_boss.");
 assert(enc_board / 2 + 0.4 < pcb_h / 2 - 0.5 && enc_board / 2 + 0.4 > disp_h / 2 + 0.3,
@@ -263,7 +269,8 @@ assert(abs(clip_ax_y + boss_y) < monitor_depth / 2 - 2,
        "Clip screws would land on a lip: adjust boss_y or front_offset for this monitor_depth.");
 
 echo(str("Body length ", Lb, " mm; overall with caps ≈ ", Lb + cap_dome + ring_len + knob_gap + knob_cyl + knob_dome, " mm"));
-echo(str("Window blank: ", acr_len, " x ", acr_h, " x ", acrylic_t, " mm"));
+echo(str("Window blank: ", acr_len, " x ", acr_h, " x ", acrylic_t, " mm; overlap behind the frame: left ",
+          win_open_cx - win_len / 2 - acr_x0, ", right ", acr_x0 + acr_len - (win_open_cx + win_len / 2), " mm"));
 echo(str("Shaft engagement in knob: ", tip_local, " mm; collar reaches ", bush_in_knob, " mm into the knob (counterbored)"));
 echo(str(neo_ring ? "NeoPixel ring: diffuser " : "Light ring ", ring_len, " mm thick"));
 echo(str("USB-C opening centre: x = ", usb_hole_cx, " mm from the body's left end, on the back (port modelled at ", usb_cx, ")"));
@@ -508,8 +515,8 @@ module left_cap() {
         translate([win_seat, -R - 1, -acr_h / 2 - 0.3])
             cube([spigot - win_seat + 1, R + 1 + inner_flat_y + acrylic_t + 0.3, acr_h + 0.6]);
         // board pocket (PCB-thickness part, then open above the PCB)
-        translate([mcu_x0, mcu_y0 - mcu_end_clr, -mcu_w / 2 - mcu_clr])
-            cube([spigot - mcu_x0 + 1, mcu_l + 2 * mcu_end_clr, mcu_w + 2 * mcu_clr]);
+        translate([mcu_x0, mcu_y0 - mcu_ant_clr, -mcu_w / 2 - mcu_clr])
+            cube([spigot - mcu_x0 + 1, mcu_l + mcu_ant_clr + mcu_end_clr, mcu_w + 2 * mcu_clr]);
         // wire channels beside the long edges (solder blobs, wires)
         translate([mcu_top_x - 0.6, mcu_y0, -mcu_w / 2 - mcu_wire_ch])
             cube([spigot - mcu_top_x + 1.6, mcu_l, mcu_w + 2 * mcu_wire_ch]);
