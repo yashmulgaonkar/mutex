@@ -99,7 +99,10 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   back drops into a counterbore in the carrier hub, so it stays concentric while gluing.
 - Its 3 wires (DIN, GND, 5V) go through dedicated slots in the seat floor at `neo_pad_a` (59/301/240 deg,
   measured from Adafruit's photo), which also clocks the ring; a 1 mm groove under the pad circle clears
-  the solder joints. Firmware support is not written yet.
+  the solder joints. Firmware: ring DIN on ESP32 GPIO6 (`RING_PIN`), Adafruit NeoPixel library; `RING_OFFSET` /
+  `RING_REVERSE` set the 12 o'clock LED and direction. Ring mode `status` (default) follows the display
+  (effect-synced animations, face mood/blink/gaze, timer arc, menu gauges, new-message burst); the other ring
+  modes are standalone effects (`RING <name>` serial, `/api/ring?m=&b=`, menu RING / RING LVL, web "Light ring").
 - Shaft engagement in the knob is 5.6 mm with the default 22 mm shaft (min 4 enforced by an assert).
 
 ## Enclosure: encoder carrier (serviceable right end)

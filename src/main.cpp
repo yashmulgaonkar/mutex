@@ -19,6 +19,7 @@
 #include <Adafruit_LEDBackpack.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
+#include <Adafruit_NeoPixel.h>
 
 // ============================ USER CONFIG ===================================
 #define DISP_ADDR_LEFT   0x70
@@ -29,7 +30,11 @@
 #define FO               ((NCH - 8) / 2)   // face and timer sit on the middle 8 chars
 #define ENC_ADDR         0x36
 #define ENC_BTN_PIN      24      // seesaw pin for the encoder switch
-#define ENC_NEO_PIN      6       // seesaw pin for the NeoPixel
+#define ENC_NEO_PIN      6       // seesaw pin for the encoder's own NeoPixel (not the ring)
+#define RING_PIN         6       // ESP32 GPIO driving the 12-LED NeoPixel ring's DIN
+#define RING_N           12
+#define RING_OFFSET      0       // physical LED index that sits at 12 o'clock (set after fitting)
+#define RING_REVERSE     0       // 1 if the ring's LED order runs counter-clockwise when seen from outside
 #define AP_PASSWORD      "mutexsign"   // >= 8 chars
 #define I2C_BUS          Wire    // QT Py ESP32-S3 STEMMA port: use Wire1
 // #define I2C_SDA 21            // uncomment to force pins (generic DevKit)
@@ -81,6 +86,13 @@ const char* FACE_NAMES[F_COUNT] = { "auto","happy","sad","angry","sleepy",
 // ---- LED modes -------------------------------------------------------------
 enum { L_OFF, L_SOLID, L_BREATHE, L_RAINBOW, L_PULSE, L_COUNT };
 const char* LED_NAMES[L_COUNT] = { "off","solid","breathe","rainbow","pulse" };
+
+// ---- Ring modes (12-LED ring at the seam) ----------------------------------
+// R_STATUS is the ring's own status display; the rest are test / ambient effects.
+enum { R_OFF, R_STATUS, R_SOLID, R_BREATHE, R_RAINBOW, R_WHEEL, R_COMET, R_CHASE,
+       R_SPARKLE, R_TWINKLE, R_FIRE, R_WIPE, R_BOUNCE, R_POLICE, R_TEST, R_DEMO, R_COUNT };
+const char* RING_NAMES[R_COUNT] = { "off","status","solid","breathe","rainbow","wheel","comet",
+  "chase","sparkle","twinkle","fire","wipe","bounce","police","test","demo" };
 
 // ---- Data ------------------------------------------------------------------
 struct Preset { String text; uint8_t mode; uint32_t color; };
@@ -141,10 +153,13 @@ int browseIdx = 0; uint32_t uiTimeout = 0;
 String uiStr; uint16_t uiG[MAXG]; int uiLen = 0; uint32_t uiStart = 0;
 uint32_t infoUntil = 0, notifyUntil = 0, lastActivity = 0, lastAdjust = 0;
 
-enum { MI_BRIGHT, MI_SPEED, MI_MODE, MI_FACE, MI_LEDMODE, MI_LEDLVL, MI_TIMER,
-       MI_IDLE, MI_CAMEO, MI_SLEEP, MI_IP, MI_EXIT, MI_COUNT };
+enum { MI_BRIGHT, MI_SPEED, MI_MODE, MI_FACE, MI_LEDMODE, MI_LEDLVL, MI_RING, MI_RINGLVL,
+       MI_TIMER, MI_IDLE, MI_CAMEO, MI_SLEEP, MI_IP, MI_EXIT, MI_COUNT };
 const char* MENU_NAMES[MI_COUNT] = { "BRIGHT","SPEED","EFFECT","FACE","LED",
-  "LED LVL","TIMER","IDLEFACE","CAMEO","SLEEP","IP ADDR","EXIT" };
+  "LED LVL","RING","RING LVL","TIMER","IDLEFACE","CAMEO","SLEEP","IP ADDR","EXIT" };
+// ring settings live in their own Preferences keys so adding them didn't reset `st`
+uint8_t ringMode = R_STATUS, ringBright = 64;
+uint32_t ringModeStart = 0;
 int menuIdx = 0, menuFace = 0, menuTimer = 25;
 
 // timer
@@ -159,6 +174,7 @@ uint8_t faceExpr = F_AUTO, reactExpr = 0, pupil = 0;
 int8_t gaze = 0;
 bool asleep = false, yawned = false, dblBlink = false;
 bool faceShowing = false;
+uint8_t faceNow = F_AUTO; bool faceBlinkNow = false;   // what the face is showing this frame (for the ring)
 uint32_t nextBlink = 0, blinkEnd = 0, nextGaze = 0, nextMood = 0,
          reactUntil = 0, faceSince = 0;
 
@@ -247,6 +263,11 @@ uint8_t modeFromName(String s) {
   if (s.length() && isDigit(s[0])) return constrain(s.toInt(), 0, M_COUNT - 1);
   return M_SCROLL;
 }
+uint8_t ringFromName(String s) {
+  s.trim(); s.toLowerCase();
+  for (int i = 0; i < R_COUNT; i++) if (s == RING_NAMES[i]) return i;
+  return ringMode;
+}
 uint8_t faceFromName(String s) {
   s.trim(); s.toLowerCase();
   for (int i = 0; i < F_COUNT; i++) if (s == FACE_NAMES[i]) return i;
@@ -315,6 +336,7 @@ void presetsFromString(const String& s) {
 }
 
 void saveSettings() { prefs.putBytes("st", &st, sizeof st); }
+void saveRing()     { prefs.putUChar("rmode", ringMode); prefs.putUChar("rbri", ringBright); }
 void savePresets()  { prefs.putString("presets", presetsToString()); }
 void saveCurrent() {
   prefs.putString("ctext", curText); prefs.putUChar("cmode", curMode);
@@ -330,6 +352,8 @@ void loadAll() {
   String p = prefs.getString("presets", "");
   if (p.length()) presetsFromString(p); else defaultPresets();
   webKey = prefs.getString("key", "");
+  ringMode = prefs.getUChar("rmode", R_STATUS); if (ringMode >= R_COUNT) ringMode = R_STATUS;
+  ringBright = prefs.getUChar("rbri", 64);
 }
 
 // ============================================================================
@@ -415,6 +439,7 @@ void drawFace(uint32_t now, uint8_t baseExpr) {
   }
   if (blinking) { eyeL = EYE_SHUT; eyeR = EYE_SHUT; }
 
+  faceNow = e; faceBlinkNow = blinking;   // exported for the ring
   clearFb();
   fb[FO + 1 + g] = eyeL; fb[FO + 6 + g] = eyeR; fb[FO + 3] = mL; fb[FO + 4] = mR;
   if (e == F_SLEEP) fb[FO + 7] = extra;
@@ -423,6 +448,11 @@ void drawFace(uint32_t now, uint8_t baseExpr) {
 // ============================================================================
 //  Message effects  (t = ms since effect started)
 // ============================================================================
+// Phase of the running effect, so the ring can animate in step with the display.
+enum { FX_RUN, FX_HOLD, FX_OUT, FX_BLANK };
+uint8_t fxStage = FX_HOLD;
+float   fxProg = 0, fxPos = -1;    // progress 0..1 within the stage; position 0..1 across the display (-1 = none)
+
 const char FLIPCH[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&*@?";
 const uint16_t RAINROW[5] = { SA, SH|SJ|SK, SG1|SG2, SL|SM|SN, SD };
 const uint16_t SPIN[8] = { SJ, SK, SG2, SN, SM, SL, SG1, SH };
@@ -443,25 +473,28 @@ void fxBounce(uint32_t t) {
   else if (k < pause + range) off = k - pause;
   else if (k < 2 * pause + range) off = range;
   else off = range - (k - 2 * pause - range);
+  fxPos = (float)off / range;
   drawWindow(msgG, msgLen, 0, NCH, off);
 }
 void fxType(uint32_t t) {
   uint32_t per = stepMs() * 13 / 10 + 30, typeEnd = (msgLen + 1) * per, hd = holdDur();
   if (t < typeEnd) {
     int n = t / per;
+    fxStage = FX_RUN; fxProg = msgLen ? min(1.0f, (float)n / msgLen) : 1;
     int off = msgLen < NCH ? centerOff(msgLen, NCH) : max(0, n + 1 - NCH);
     for (int i = 0; i < NCH; i++) {
       int idx = off + i;
       fb[i] = (idx >= 0 && idx < n) ? msgG[idx] : ((idx == n && (t / 200) % 2 == 0) ? SD : 0);
     }
   } else if (t < typeEnd + hd) drawWindow(msgG, msgLen, 0, NCH, holdOff(t - typeEnd));
-  else if (t < typeEnd + hd + 600) clearFb();
+  else if (t < typeEnd + hd + 600) { fxStage = FX_BLANK; clearFb(); }
   else restartMode();
 }
 void fxFlip(uint32_t t) {
   int co = holdOff(0);
   uint32_t per = stepMs() / 2 + 50, settleAll = 250 + NCH * per;
   if (t < settleAll) {
+    fxStage = FX_RUN; fxProg = t < 250 ? 0 : (float)(t - 250) / (NCH * per);
     for (int i = 0; i < NCH; i++) {
       int idx = co + i;
       if (idx < 0 || idx >= msgLen) { fb[i] = 0; continue; }
@@ -489,10 +522,10 @@ void sparkleFrame(float p, uint32_t t, int off) {
 }
 void fxSparkle(uint32_t t) {
   const uint32_t IN = 1400, OUT = 1200; uint32_t hd = holdDur();
-  if (t < IN) sparkleFrame((float)t / IN, t, holdOff(0));
+  if (t < IN) { fxStage = FX_RUN; fxProg = (float)t / IN; sparkleFrame(fxProg, t, holdOff(0)); }
   else if (t < IN + hd) drawWindow(msgG, msgLen, 0, NCH, holdOff(t - IN));
-  else if (t < IN + hd + OUT) sparkleFrame(1.0f - (float)(t - IN - hd) / OUT, t, holdOff(hd));
-  else if (t < IN + hd + OUT + 400) clearFb();
+  else if (t < IN + hd + OUT) { fxStage = FX_OUT; fxProg = 1.0f - (float)(t - IN - hd) / OUT; sparkleFrame(fxProg, t, holdOff(hd)); }
+  else if (t < IN + hd + OUT + 400) { fxStage = FX_BLANK; clearFb(); }
   else restartMode();
 }
 uint16_t rainCol(int c, uint32_t t) {
@@ -504,12 +537,13 @@ void fxRain(uint32_t t) {
   const uint32_t RAIN = 2200, PER = 110; uint32_t cond = RAIN + NCH * PER, hd = holdDur();
   int co = holdOff(0);
   if (t < cond) {
+    fxStage = FX_RUN; fxProg = t < RAIN ? 0 : (float)(t - RAIN) / (NCH * PER);   // 0 while raining, then settling
     for (int i = 0; i < NCH; i++) {
       int idx = co + i; uint16_t tg = (idx >= 0 && idx < msgLen) ? msgG[idx] : 0;
       fb[i] = t >= RAIN + i * PER ? tg : rainCol(i, t);
     }
   } else if (t < cond + hd) drawWindow(msgG, msgLen, 0, NCH, holdOff(t - cond));
-  else if (t < cond + hd + RAIN / 2) for (int i = 0; i < NCH; i++) fb[i] = rainCol(i, t);
+  else if (t < cond + hd + RAIN / 2) { fxStage = FX_OUT; for (int i = 0; i < NCH; i++) fb[i] = rainCol(i, t); }
   else restartMode();
 }
 void fxScan(uint32_t t) {
@@ -517,6 +551,7 @@ void fxScan(uint32_t t) {
   static const uint16_t TRAIL[3] = { SALL, SG1|SG2|SA|SD, SG1|SG2 };
   if (t < scanDur) {
     clearFb(); int k = (t / per) % STEPS;
+    fxStage = FX_RUN; fxPos = (float)(k < NCH ? k : STEPS - k) / (NCH - 1);
     for (int j = 2; j >= 0; j--) {
       int kk = (k - j + STEPS) % STEPS, pos = kk < NCH ? kk : STEPS - kk;
       fb[pos] = TRAIL[j];
@@ -531,7 +566,7 @@ void fxSpin(uint32_t t) {
   if (msgLen <= (NCH - 2)) drawWindow(msgG, msgLen, 1, (NCH - 2), -(((NCH - 2) - msgLen) / 2));
   else drawWindow(msgG, msgLen, 1, (NCH - 2), -(NCH - 2) + (int)((t / stepMs()) % (msgLen + (NCH - 2))));
 }
-void fxBlink(uint32_t t) { if ((t % 1000) < 650) fxStatic(t); else clearFb(); }
+void fxBlink(uint32_t t) { if ((t % 1000) < 650) fxStatic(t); else { fxStage = FX_BLANK; clearFb(); } }
 
 void drawContent(uint32_t now) {
   bool idle = st.idleFace && curMode != M_FACE &&
@@ -550,6 +585,7 @@ void drawContent(uint32_t now) {
   if (wantFace) { drawFace(now, curMode == M_FACE ? faceExpr : F_AUTO); return; }
 
   uint32_t t = now - modeStart;
+  fxStage = FX_HOLD; fxProg = 1; fxPos = -1;
   switch (curMode) {
     case M_STATIC:  fxStatic(t); break;
     case M_SCROLL:  fxScroll(t); break;
@@ -654,6 +690,8 @@ String menuValueText(int i) {
     case MI_FACE:    m = FACE_NAMES[menuFace]; m.toUpperCase(); return m;
     case MI_LEDMODE: m = LED_NAMES[st.ledMode]; m.toUpperCase(); return m;
     case MI_LEDLVL:  return padVal("LED", String(st.ledBright));
+    case MI_RING:    m = RING_NAMES[ringMode]; m.toUpperCase(); return m;
+    case MI_RINGLVL: return padVal("RNG", String(ringBright));
     case MI_TIMER:   return offOr("TMR", menuTimer, "M");
     case MI_IDLE:    return offOr("IDL", st.idleFace, "M");
     case MI_CAMEO:   return offOr("CAM", st.cameo, "S");
@@ -671,6 +709,8 @@ void menuAdjust(int i, int d) {
                      faceShowing = false; break;
     case MI_LEDMODE: st.ledMode = (st.ledMode + d + L_COUNT) % L_COUNT; break;
     case MI_LEDLVL:  st.ledBright = constrain(st.ledBright + d * 8, 0, 255); break;
+    case MI_RING:    ringMode = (ringMode + d + R_COUNT) % R_COUNT; ringModeStart = millis(); break;
+    case MI_RINGLVL: ringBright = constrain(ringBright + d * 8, 0, 255); break;
     case MI_TIMER:   menuTimer = constrain(menuTimer + d * 5, 0, 95); break;
     case MI_IDLE:    st.idleFace = constrain(st.idleFace + d, 0, 60); break;
     case MI_CAMEO:   st.cameo = constrain((int)st.cameo + d * 15, 0, 600); break;
@@ -679,7 +719,7 @@ void menuAdjust(int i, int d) {
   lastAdjust = millis();
 }
 void exitMenu() {
-  ui = UI_NORMAL; saveSettings();
+  ui = UI_NORMAL; saveSettings(); saveRing();
   msgLen = compile(curText, msgG, MAXG); saveCurrent();
 }
 void drawMenu(uint32_t now) {
@@ -823,6 +863,287 @@ void updateLed(uint32_t now) {
 }
 
 // ============================================================================
+//  NeoPixel ring (12 LEDs on GPIO RING_PIN, behind the light-ring diffuser)
+// ============================================================================
+Adafruit_NeoPixel ring(RING_N, RING_PIN, NEO_GRB + NEO_KHZ800);
+uint32_t ringBuf[RING_N], ringShown[RING_N];
+float    ringLvl[RING_N];          // per-LED state for sparkle / twinkle / fire
+uint32_t ringHue[RING_N];
+bool     ringForce = true;
+
+void ringBegin() {
+  ring.begin(); ring.setBrightness(255); ring.clear(); ring.show();
+  ringModeStart = millis(); ringForce = true;
+}
+// logical LED i: 0 = 12 o'clock, increasing clockwise (seen from outside)
+inline int ringPhys(int i) {
+  i = ((i % RING_N) + RING_N) % RING_N;
+  return (RING_REVERSE ? (RING_N - i) % RING_N + RING_OFFSET : i + RING_OFFSET) % RING_N;
+}
+inline void rSet(int i, uint32_t c) { ringBuf[ringPhys(i)] = c; }
+inline void rFill(uint32_t c) { for (int i = 0; i < RING_N; i++) ringBuf[i] = c; }
+uint32_t rMax(uint32_t a, uint32_t b) {
+  return max(a & 0xFF0000, b & 0xFF0000) | max(a & 0xFF00, b & 0xFF00) | max(a & 0xFF, b & 0xFF);
+}
+inline void rAdd(int i, uint32_t c) { int p = ringPhys(i); ringBuf[p] = rMax(ringBuf[p], c); }
+// comet: bright head at position pos, tail of len LEDs behind it (dir = direction of travel)
+void rComet(float pos, int dir, int len, uint32_t c) {
+  int head = (int)floorf(pos);
+  for (int k = 0; k < len; k++) {
+    float f = 1.0f - (float)k / len;
+    rAdd(head - k * dir, scaleC(c, f * f));
+  }
+}
+uint32_t ringColor() { return curColor ? curColor : 0xFFFFFF; }
+uint32_t rMix(uint32_t a, uint32_t b, float t) {           // a -> b; weights sum to 1 so channels can't overflow
+  t = constrain(t, 0.0f, 1.0f);
+  return scaleC(a, 1 - t) + scaleC(b, t);
+}
+// two soft dots mirrored left/right of 12 o'clock, at distance p (0 = top, RING_N/2 = bottom)
+void rMirror(float p, uint32_t c) {
+  for (int i = 0; i <= RING_N / 2; i++) {
+    float d = fabsf(i - p);
+    if (d < 2) { float f = 1 - d / 2; rAdd(i, scaleC(c, f * f)); rAdd(-i, scaleC(c, f * f)); }
+  }
+}
+// arc from 12 o'clock clockwise covering fraction f, last LED partially lit
+void rGauge(float f, uint32_t c) {
+  float lit = constrain(f, 0.0f, 1.0f) * RING_N;
+  for (int i = 0; i < RING_N; i++) {
+    float k = constrain(lit - i, 0.0f, 1.0f);
+    rSet(i, k > 0 ? scaleC(c, 0.08f + 0.92f * k) : scaleC(c, 0.04f));
+  }
+}
+
+// Push ringBuf (scaled by ringBright) to the LEDs, only when something changed.
+void ringPush() {
+  bool changed = ringForce;
+  for (int i = 0; i < RING_N; i++) {
+    uint32_t c = scaleC(ringBuf[i], ringBright / 255.0f);
+    if (c != ringShown[i]) { ringShown[i] = c; changed = true; }
+  }
+  if (!changed) return;
+  ringForce = false;
+  for (int i = 0; i < RING_N; i++) ring.setPixelColor(i, ringShown[i]);
+  ring.show();
+}
+
+// Test / ambient effects. t = ms since the effect started.
+void ringEffect(uint8_t m, uint32_t now, uint32_t t) {
+  float br = 0.12f + 0.88f * (sinf(now * 6.2832f / 3000.0f) + 1) / 2;
+  uint32_t c = ringColor();
+  rFill(0);
+  switch (m) {
+    case R_SOLID:   rFill(c); break;
+    case R_BREATHE: rFill(scaleC(c, br)); break;
+    case R_RAINBOW: rFill(wheel((t / 20) & 255)); break;
+    case R_WHEEL:   for (int i = 0; i < RING_N; i++) rSet(i, wheel((i * 256 / RING_N + t / 10) & 255)); break;
+    case R_COMET:   rComet(t / 70.0f, 1, 6, c); break;
+    case R_CHASE: { int ph = (t / 120) % 3; uint32_t h = wheel((t / 40) & 255);
+                    for (int i = ph; i < RING_N; i += 3) rSet(i, h);
+                    break; }
+    case R_SPARKLE:
+      for (int i = 0; i < RING_N; i++) {
+        ringLvl[i] *= 0.85f;
+        if (random(1000) < 25) ringLvl[i] = 1;
+        ringBuf[i] = rMax(scaleC(c, 0.10f), scaleC(0xFFFFFF, ringLvl[i]));
+      }
+      break;
+    case R_TWINKLE:
+      for (int i = 0; i < RING_N; i++) {
+        ringLvl[i] *= 0.96f;
+        if (ringLvl[i] < 0.02f && random(1000) < 15) { ringLvl[i] = 1; ringHue[i] = wheel(random(256)); }
+        ringBuf[i] = scaleC(ringHue[i], ringLvl[i]);
+      }
+      break;
+    case R_FIRE:
+      for (int i = 0; i < RING_N; i++) {
+        ringLvl[i] += (random(100) / 100.0f - ringLvl[i]) * 0.3f;   // smoothed random heat
+        float h = 0.25f + 0.75f * ringLvl[i];
+        ringBuf[i] = ((uint32_t)(255 * h) << 16) | ((uint32_t)(90 * h * h) << 8);
+      }
+      break;
+    case R_WIPE: {                                     // fill clockwise, then empty, new hue each cycle
+      uint32_t step = t / 80, cyc = step / (RING_N * 2), k = step % (RING_N * 2);
+      uint32_t col = wheel((cyc * 53) & 255);
+      for (int i = 0; i < RING_N; i++)
+        if (k < RING_N ? i <= (int)k : i > (int)(k - RING_N)) rSet(i, col);
+      break; }
+    case R_BOUNCE: rMirror((sinf(t * 6.2832f / 1600.0f) + 1) / 2 * (RING_N / 2), c); break;
+    case R_POLICE: {
+      uint32_t p = t % 1000;
+      bool on = (p / 80) % 2 == 0 && (p % 500) < 320;
+      if (on) for (int i = 0; i < RING_N / 2; i++) rSet(p < 500 ? i : i + RING_N / 2, p < 500 ? 0xFF0000 : 0x0030FF);
+      break; }
+    case R_TEST: {   // orientation check: 12 o'clock red, 3 green, 6 blue, 9 white, plus a dim walking dot
+      rSet(0, 0xFF0000); rSet(3, 0x00FF00); rSet(6, 0x0000FF); rSet(9, 0xFFFFFF);
+      int w = (t / 500) % RING_N; if (w % 3) rSet(w, 0x302000);
+      break; }
+  }
+}
+
+// ---- "status" mode: the ring follows whatever the display is doing ----------
+// Logical LEDs: 0 = 12 o'clock, clockwise; LEDs i and -i are left/right mirror images,
+// so "distance from the top" d = 0..6 works like a vertical axis (rain falls, puddles fill).
+
+// Face: colour by mood, dims when the eyes blink, a highlight follows the gaze.
+void ringFace(uint32_t now, uint32_t c) {
+  float w = (sinf(now * 6.2832f / 3000.0f) + 1) / 2;        // 0..1 slow wave
+  switch (faceNow) {
+    case F_HAPPY:     rFill(scaleC(0xFFA000, 0.45f + 0.35f * w));
+                      rMirror(RING_N / 2 - 1, 0xFFE070); break;              // a warm "smile" at the bottom
+    case F_SAD: {     rFill(scaleC(0x0020FF, 0.10f + 0.10f * w));
+                      float d = (now % 2200) / 2200.0f * (RING_N / 2 + 1);     // a tear runs down one side
+                      if (d <= RING_N / 2) rAdd(-(int)d, 0x60A0FF); break; }
+    case F_ANGRY:     rFill(scaleC(0xFF0000, (now % 500) < 140 ? 1.0f : 0.25f)); break;   // fast throb
+    case F_SLEEPY:    rFill(scaleC(0xFF6010, 0.04f + 0.12f * w)); break;
+    case F_DIZZY:     for (int i = 0; i < RING_N; i++) rSet(i, wheel((i * 21 + now / 3) & 255)); break;
+    case F_WINK:      rFill(scaleC(c, 0.25f)); rSet(2, (now / 150) % 4 ? 0xFFFFFF : scaleC(c, 0.25f)); break;
+    case F_SURPRISED: rFill(rMix(0xFFFFFF, c, (now % 700) / 700.0f)); break;               // white pops
+    case F_TALK:      rFill(scaleC(c, hash32(now / 130) % 3 ? 0.9f : 0.25f)); break;       // same rhythm as the mouth
+    case F_YAWN:      rFill(scaleC(c, 0.08f + 0.25f * (1 - w))); break;
+    case F_SLEEP:     rFill(scaleC(0x0030FF, 0.05f + 0.25f * (sinf(now * 6.2832f / 6000.0f) + 1) / 2)); return;
+    default: {        // auto / look: soft base, pupil highlight where the eyes are looking
+      rFill(scaleC(c, 0.22f + 0.1f * w));
+      int at = gaze < 0 ? RING_N * 3 / 4 : (gaze > 0 ? RING_N / 4 : 0);
+      rAdd(at - 1, scaleC(c, 0.5f)); rAdd(at, c); rAdd(at + 1, scaleC(c, 0.5f));
+    }
+  }
+  if (faceBlinkNow) for (int i = 0; i < RING_N; i++) ringBuf[i] = scaleC(ringBuf[i], 0.12f);
+}
+
+void ringRain(uint32_t t, uint32_t c, bool drops, float level) {
+  if (drops)
+    for (int sd = -1; sd <= 1; sd += 2)
+      for (int j = 0; j < 2; j++) {
+        uint32_t h = hash32(sd * 7 + j * 13 + cycleSeed * 31);
+        uint32_t v = 90 + h % 60, d = (t / v + h % 9 + j * 4) % 9;          // 9 steps, 0..6 visible
+        if (d <= RING_N / 2) { rAdd(sd * (int)d, c); if (d) rAdd(sd * (int)(d - 1), scaleC(c, 0.3f)); }
+      }
+  float lv = level * (RING_N / 2 + 1);                                       // puddle rises from the bottom
+  for (int d = 0; d <= RING_N / 2; d++) {
+    float k = constrain(lv - (RING_N / 2 - d), 0.0f, 1.0f);
+    if (k > 0) { rAdd(d, scaleC(c, k)); rAdd(-d, scaleC(c, k)); }
+  }
+}
+
+void ringContent(uint32_t now) {
+  uint32_t c = ringColor(), t = now - modeStart;
+  rFill(0);
+  if (faceShowing) { ringFace(now, c); return; }
+  float glow = 0.55f + 0.25f * (sinf(now * 6.2832f / 4000.0f) + 1) / 2;   // calm "message is up" level
+  if (fxStage == FX_BLANK) return;
+  switch (curMode) {
+    case M_SCROLL: {                                                        // bands crawl at the text's speed
+      float p = (float)t / stepMs();
+      for (int i = 0; i < RING_N; i++) {
+        float w = 0.5f + 0.5f * sinf((i + p) * 6.2832f * 2 / RING_N);
+        rSet(i, scaleC(c, 0.08f + 0.92f * w * w));
+      }
+      break; }
+    case M_BOUNCE:
+      if (fxPos < 0) rFill(scaleC(c, glow));
+      else { rFill(scaleC(c, 0.08f)); rMirror(fxPos * (RING_N / 2), c); }  // dots ride with the text
+      break;
+    case M_TYPE:
+      if (fxStage == FX_RUN) {                                              // fills as characters appear
+        int n = (int)(fxProg * RING_N);
+        for (int i = 0; i < n; i++) rSet(i, c);
+        if (n < RING_N && (t / 200) % 2 == 0) rSet(n, 0x808080);           // blinking cursor
+      } else rFill(scaleC(c, glow));
+      break;
+    case M_FLIP:
+      if (fxStage == FX_RUN)                                                // split-flap: random colours settle in order
+        for (int i = 0; i < RING_N; i++)
+          rSet(i, i < fxProg * RING_N ? c : scaleC(wheel(hash32(i * 7919 + t / 45 + cycleSeed * 131) & 255), 0.6f));
+      else rFill(scaleC(c, glow));
+      break;
+    case M_SPARKLE: {
+      float dens = fxStage == FX_HOLD ? 0.004f : 0.08f * fxProg;
+      float base = fxStage == FX_HOLD ? glow : 0.4f * fxProg;
+      for (int i = 0; i < RING_N; i++) {
+        ringLvl[i] *= 0.85f;
+        if (random(1000) < dens * 1000) ringLvl[i] = 1;
+        ringBuf[i] = rMax(scaleC(c, base), scaleC(0xFFFFFF, ringLvl[i]));
+      }
+      break; }
+    case M_RAIN:
+      if (fxStage == FX_RUN)      ringRain(t, c, true, fxProg);
+      else if (fxStage == FX_OUT) ringRain(t, c, true, 0);
+      else                        rFill(scaleC(c, glow));
+      break;
+    case M_SCAN:
+      if (fxStage == FX_RUN) { rFill(scaleC(c, 0.05f)); rMirror(fxPos * (RING_N / 2), c); }
+      else rFill(scaleC(c, glow));
+      break;
+    case M_SPIN: {                                                          // same speed as the end spinners
+      float p = (float)t / (stepMs() / 3 + 40) * RING_N / 8;
+      rFill(scaleC(c, 0.08f)); rComet(p, 1, 4, c); rComet(p + RING_N / 2, 1, 4, c);
+      break; }
+    case M_BLINK: rFill(c); break;                                          // blank half handled above
+    default:                                                                // static
+      rFill(scaleC(c, glow)); rComet(now / 400.0f, 1, 3, c);
+  }
+}
+
+// Status overlays first (same priority as the encoder LED), then the content.
+void ringStatus(uint32_t now) {
+  rFill(0);
+  if (now < notifyUntil) {                                                  // new message: burst from the top
+    float q = 1 - (notifyUntil - now) / 700.0f, d = q * (RING_N / 2);
+    for (int i = 0; i <= RING_N / 2; i++) if (i < d) { rSet(i, scaleC(ringColor(), q)); rSet(-i, scaleC(ringColor(), q)); }
+    rMirror(d, 0xFFFFFF);
+    return;
+  }
+  if (ui == UI_EDIT) {                                                      // value being edited, as a gauge
+    switch (menuIdx) {
+      case MI_BRIGHT:  rGauge(st.brightness / 15.0f, 0xFFFFFF); return;
+      case MI_SPEED:   rGauge((st.speed - 1) / 9.0f, 0x00C0FF); return;
+      case MI_LEDLVL:  rGauge(st.ledBright / 255.0f, 0x00C0FF); return;
+      case MI_RINGLVL: rFill(0xFFFFFF); return;                             // brightness shows itself
+      case MI_TIMER:   rGauge(menuTimer / 95.0f, 0x00FF60); return;
+      case MI_IDLE:    rGauge(st.idleFace / 60.0f, 0x00A0FF); return;
+      case MI_CAMEO:   rGauge(st.cameo / 600.0f, 0x00A0FF); return;
+      case MI_SLEEP:   rGauge(st.sleepMin / 120.0f, 0x0030FF); return;
+      case MI_MODE: case MI_FACE: ringContent(now); return;                // preview what the display previews
+    }
+  }
+  if (ui == UI_MENU || ui == UI_EDIT) {
+    float p = now / 90.0f; rComet(p, 1, 3, 0x00C0FF); rComet(p + RING_N / 2, 1, 3, 0x00C0FF); return;
+  }
+  if (ui == UI_BROWSE) {
+    uint32_t c = numPresets ? presets[browseIdx].color : 0;
+    rFill(scaleC(c, 0.35f)); rSet(browseIdx, c); return;                    // bright marker = which preset
+  }
+  if (offHours && now > wakeUntil) return;
+  if (now < timerDoneUntil) { rFill(((now / 250) % 2) ? 0x00FF00 : 0xFF0000); return; }
+  if (tmrEnd) {                                                             // remaining time as a shrinking arc
+    float f = constrain((float)(int32_t)(tmrEnd - now) / timerTotal, 0.0f, 1.0f);
+    rGauge(f, ((uint32_t)(255 * (1 - f)) << 16) | ((uint32_t)(255 * f) << 8));
+    if ((int32_t)(tmrEnd - now) < 60000 && (now / 400) % 2)
+      for (int i = 0; i < RING_N; i++) ringBuf[i] = scaleC(ringBuf[i], 0.2f);
+    return;
+  }
+  if (now < infoUntil) { rFill(scaleC(0x00C0FF, 0.3f)); return; }
+  ringContent(now);
+}
+
+void updateRing(uint32_t now) {
+  uint32_t t = now - ringModeStart;
+  uint8_t m = ringMode;
+  bool previewing = ui == UI_EDIT && menuIdx == MI_RING;                    // menu: show the effect being picked
+  if (m == R_DEMO) {                                                        // cycle the test effects, 8 s each
+    static const uint8_t seq[] = { R_SOLID, R_BREATHE, R_RAINBOW, R_WHEEL, R_COMET, R_CHASE, R_SPARKLE,
+                                   R_TWINKLE, R_FIRE, R_WIPE, R_BOUNCE, R_POLICE };
+    m = seq[(t / 8000) % sizeof seq]; t %= 8000;
+  }
+  if (m == R_STATUS)   { if (previewing) ringContent(now); else ringStatus(now); }
+  else if (m == R_OFF) rFill(0);
+  else                 ringEffect(m, now, t);
+  ringPush();
+}
+
+// ============================================================================
 //  Web portal
 // ============================================================================
 const char PAGE[] PROGMEM = R"rawliteral(<!doctype html><html><head><meta charset=utf-8>
@@ -851,6 +1172,10 @@ label span{min-width:150px}label input[type=range]{flex:1}label output{width:36p
 <div class=row><select id=mode class=grow></select><button class=p onclick="show()">Show</button></div>
 <h2 style="margin-top:12px">Presets</h2><div class=chips id=quick></div></section>
 <section><h2>Face</h2><div class=chips id=faces></div></section>
+<section><h2>Light ring</h2><div class=chips id=rings></div>
+<label><span>Ring brightness</span><input type=range id=rbri min=0 max=255 oninput="this.nextElementSibling.value=this.value"
+onchange="ring({b:this.value})"><output id=rbo></output></label>
+<div style="color:var(--mut);font-size:13px">"status" follows the display: effect, face mood, timer and menu.</div></section>
 <section><h2>Timer</h2><div class=row><input id=tmin type=number min=1 max=99 value=25 style="width:80px"> min
 <input id=tlab maxlength=3 value="FOC" style="width:70px"><button class=p onclick="timer(1)">Start</button>
 <button onclick="timer(0)">Stop</button></div><div id=tleft style="color:var(--mut)"></div></section>
@@ -879,7 +1204,7 @@ $('tleft').textContent=S.timerLeft?'Remaining '+Math.floor(S.timerLeft/60)+'m '+
 function render(){quick();$('mode').outerHTML=sel(S.modes,S.mode,'id=mode class=grow');
 $('quick').innerHTML=S.presets.map((p,i)=>`<button style="border-left-color:${p.c}" onclick="go('/api/preset',{i:${i}})">${esc(p.t)}</button>`).join('');
 $('faces').innerHTML=S.faces.map(f=>`<button style="border-left-color:#39f" onclick="go('/api/face',{e:'${f}'})">${f}</button>`).join('');
-P=S.presets.map(p=>({...p}));renderP();
+P=S.presets.map(p=>({...p}));renderP();renderR();
 $('sets').innerHTML=SF.map(([k,l,a,b,t])=>{const v=S.s[k];
 if(t=='b')return `<label><input type=checkbox id=s_${k} ${v?'checked':''}> ${l}</label>`;
 if(t=='led')return `<label><span>${l}</span>${sel(S.ledModes,v,'id=s_'+k)}</label>`;
@@ -888,6 +1213,9 @@ return `<label><span>${l}</span><input type=range id=s_${k} min=${a} max=${b} va
 <label><span>Hostname (.local)</span><input id=s_host class=grow value="${esc(S.s.host)}"></label>
 <label><span>Access key (blank = none)</span><input id=s_key class=grow placeholder="unchanged"></label>`;
 $('aponly').checked=!!S.s.apOnly}
+function renderR(){$('rings').innerHTML=S.ringModes.map((m,i)=>`<button style="border-left-color:${i==S.s.ringMode?'var(--acc)':'#444'}" onclick="ring({m:'${m}'})">${m}</button>`).join('');
+$('rbri').value=$('rbo').value=S.s.ringBright}
+async function ring(d){await go('/api/ring',d);renderR()}
 function renderP(){$('plist').innerHTML=P.map((p,i)=>`<div class=pr><input value="${esc(p.t)}" maxlength=64 oninput="P[${i}].t=this.value">
 ${sel(S.modes,p.m,`onchange="P[${i}].m=this.value"`)}<input type=color value="${p.c}" oninput="P[${i}].c=this.value">
 <button onclick="mv(${i})" title="Move up">↑</button><button onclick="P.splice(${i},1);renderP()" title="Delete">✕</button></div>`).join('')}
@@ -943,6 +1271,7 @@ void handleState() {
   j += ",\"schedOn\":" + String(st.schedOn) + ",\"weekendsOff\":" + String(st.weekendsOff);
   j += ",\"hourOn\":" + String(st.hourOn) + ",\"hourOff\":" + String(st.hourOff);
   j += ",\"apOnly\":" + String(st.apOnly);
+  j += ",\"ringMode\":" + String(ringMode) + ",\"ringBright\":" + String(ringBright);
   j += ",\"tz\":\"" + jsonEsc(st.tz) + "\",\"host\":\"" + jsonEsc(st.host) + "\"}";
   j += ",\"presets\":[";
   for (int i = 0; i < numPresets; i++) {
@@ -952,7 +1281,8 @@ void handleState() {
   }
   j += "],\"modes\":" + jsonArr(MODE_NAMES, M_COUNT);
   j += ",\"faces\":" + jsonArr(FACE_NAMES, F_COUNT);
-  j += ",\"ledModes\":" + jsonArr(LED_NAMES, L_COUNT) + "}";
+  j += ",\"ledModes\":" + jsonArr(LED_NAMES, L_COUNT);
+  j += ",\"ringModes\":" + jsonArr(RING_NAMES, R_COUNT) + "}";
   server.send(200, "application/json", j);
 }
 void handleShow() {
@@ -973,6 +1303,12 @@ void handleFace() {
 void handleTimer() {
   if (!authOK()) return;
   startTimer(server.arg("min").toInt(), server.arg("label")); sendOK();
+}
+void handleRing() {                                // m=<effect name>, b=<0-255>
+  if (!authOK()) return;
+  if (server.hasArg("m")) { uint8_t r = ringFromName(server.arg("m")); if (r != ringMode) { ringMode = r; ringModeStart = millis(); } }
+  if (server.hasArg("b")) ringBright = constrain(server.arg("b").toInt(), 0, 255);
+  saveRing(); sendOK();
 }
 void handlePresets() {
   if (!authOK()) return;
@@ -1011,6 +1347,7 @@ void setupServer() {
   server.on("/api/face", handleFace);
   server.on("/api/timer", handleTimer);
   server.on("/api/presets", handlePresets);
+  server.on("/api/ring", handleRing);
   server.on("/api/settings", handleSettings);
   server.on("/api/wifi", handleWifi);
   server.onNotFound([]() {                       // captive-portal-ish: send everything home
@@ -1028,6 +1365,7 @@ void bootFrame(uint32_t t, const char* label) {
   int f = (t / 70) % 8; fb[NCH - 1] = SPIN[f] | SPIN[(f + 4) % 8];
   render();
   if (pixOK) setLed(scaleC(0x0040FF, 0.2f + 0.8f * ((t / 400) % 2)));
+  rFill(0); rComet(t / 60.0f, 1, 4, 0x0040FF); ringPush();      // ring spinner while connecting
 }
 
 void startWifi() {
@@ -1076,8 +1414,15 @@ void runCmd(String l) {
                               prefs.putString("pass", c < 0 ? String("") : arg.substring(c + 1)); st.apOnly = 0; saveSettings(); ESP.restart(); }
   else if (cmd == "IP")     Serial.printf("%s %s\n", apMode ? "AP" : "IP", ipStr.c_str());
   else if (cmd == "TEST")   { testAll = !arg.equalsIgnoreCase("OFF"); forceRender = true; }
+  else if (cmd == "RING") {                       // RING <effect> | RING <0-255> | RING (lists effects)
+    if (!arg.length()) { for (int i = 0; i < R_COUNT; i++) Serial.printf("%s%s", i ? " " : "", RING_NAMES[i]); Serial.println(); }
+    else if (isDigit(arg[0])) ringBright = constrain(arg.toInt(), 0, 255);
+    else { ringMode = ringFromName(arg); ringModeStart = millis(); }
+    saveRing(); Serial.printf("ring %s %u\n", RING_NAMES[ringMode], ringBright);
+  }
   else Serial.println(F("MSG <text> | SHOW <mode> <RRGGBB> <text> | PRESET <n> | FACE <expr> | MODE <m> | "
-                        "COLOR <hex> | BRIGHT <0-15> | TEST [OFF] | TIMER <min> [label] | WIFI ssid,pass | IP"));
+                        "COLOR <hex> | BRIGHT <0-15> | TEST [OFF] | TIMER <min> [label] | WIFI ssid,pass | IP | "
+                        "RING [effect|0-255]"));
   Serial.println(F("OK"));
 }
 void handleSerial() {
@@ -1122,6 +1467,7 @@ void setup() {
     encLast = ss.getEncoderPosition();
   } else Serial.println(F("Encoder not found (0x36)"));
   if (pix.begin(ENC_ADDR)) { pixOK = true; pix.setBrightness(255); pix.show(); }
+  ringBegin();
 
   // lamp test sweep
   for (int i = 0; i < NCH; i++) { clearFb(); fb[i] = SALL | SDP; render(); delay(45); }
@@ -1162,4 +1508,5 @@ void loop() {
   if (testAll) for (int i = 0; i < NCH; i++) fb[i] = SALL | SDP;   // segment test
   render();
   updateLed(now);
+  updateRing(now);
 }
