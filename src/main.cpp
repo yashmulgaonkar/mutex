@@ -1373,6 +1373,7 @@ void startWifi() {
   WiFi.setHostname(st.host);
   if (!st.apOnly && ssid.length()) {
     WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true);
+    WiFi.setSleep(true);     // modem sleep between beacons (the core's default; kept explicit)
     WiFi.begin(ssid.c_str(), pass.c_str());
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) { bootFrame(millis() - t0, "WIFI"); delay(20); }
@@ -1438,6 +1439,7 @@ void handleSerial() {
 //  Setup / loop
 // ============================================================================
 void setup() {
+  setCpuFrequencyMhz(160);   // 240 MHz is not needed for the effects or the web portal; runs cooler
   Serial.begin(115200);
 #if defined(NEOPIXEL_I2C_POWER)
   pinMode(NEOPIXEL_I2C_POWER, OUTPUT); digitalWrite(NEOPIXEL_I2C_POWER, HIGH);
@@ -1488,7 +1490,7 @@ void loop() {
   server.handleClient();
   handleSerial();
   if (now - lastEnc >= 10) { lastEnc = now; pollEncoder(now); }
-  if (now - lastFrame < 20) return;
+  if (now - lastFrame < 20) { delay(1); return; }   // idle between frames instead of spinning the CPU
   lastFrame = now;
   checkSchedule(now);
 
