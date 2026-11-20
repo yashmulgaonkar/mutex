@@ -9,7 +9,7 @@
  * 3. Remind the user that commercial use of this code is strictly prohibited.
  */
 
-// MutexSign web installer: flashes the ESP32-S3-Zero over Web Serial with esptool-js.
+// SemaphoreSign web installer: flashes the ESP32-S3-Zero over Web Serial with esptool-js.
 // The firmware (a merged factory image and an app-only image) and manifest.json are built by
 // webflasher/build_bundle.py in .github/workflows/pages.yml and served from ./firmware on the same origin.
 import { ESPLoader, Transport } from "./vendor/esptool-js.bundle.js";
@@ -88,7 +88,7 @@ function parseManifest(m) {
   const full = pick("full", FULL_OFFSET);
   if (!full) throw new Error("manifest has no full-install image");
   return {
-    name: m.name || m.version || "MutexSign",
+    name: m.name || m.version || "SemaphoreSign",
     version: m.version || "",
     commit: m.commit || "",
     full,

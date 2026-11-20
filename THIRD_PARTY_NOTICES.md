@@ -1,6 +1,6 @@
 # Third-party notices
 
-MutexSign's own files (firmware source in `src/`, the OpenSCAD model, `webflasher/` except `webflasher/vendor/`, and the documentation)
+SemaphoreSign's own files (firmware source in `src/`, the OpenSCAD model, `webflasher/` except `webflasher/vendor/`, and the documentation)
 are licensed under **CC BY-NC-SA 4.0**, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The components below are **not** covered by that
 license: each one stays under its own terms, which apply to it wherever it is redistributed. This file is informational, not legal advice.
 

@@ -36,7 +36,7 @@
 #define RING_N           12
 #define RING_OFFSET      11       // physical LED index that sits at 12 o'clock (set after fitting)
 #define RING_REVERSE     0       // 1 if the ring's LED order runs counter-clockwise when seen from outside
-#define AP_PASSWORD      "MUTEXSIGN"   // >= 8 chars (uppercase: it is shown on the display)
+#define AP_PASSWORD      "SEMAPHORESIGN"   // >= 8 chars (uppercase: it is shown on the display)
 #define I2C_BUS          Wire    // QT Py ESP32-S3 STEMMA port: use Wire1
 // #define I2C_SDA 21            // uncomment to force pins (generic DevKit)
 // #define I2C_SCL 22
@@ -299,7 +299,7 @@ void defaultSettings() {
   st.sleepMin = 15; st.focusMin = 25; st.center = 1; st.encReverse = 0;
   st.schedOn = 0; st.weekendsOff = 1; st.hourOn = 7; st.hourOff = 18; st.apOnly = 0;
   strlcpy(st.tz, "EST5EDT,M3.2.0,M11.1.0", sizeof st.tz);
-  strlcpy(st.host, "mutexsign", sizeof st.host);
+  strlcpy(st.host, "semaphoresign", sizeof st.host);
 }
 
 void defaultPresets() {
@@ -352,11 +352,32 @@ void saveCurrent() {
   prefs.putUInt("ccolor", curColor); prefs.putInt("cpre", curPreset);
 }
 
+// One-time copy of settings saved under the old "mutexsign" namespace (before the project was
+// renamed), so an update keeps Wi-Fi, presets and settings. The old namespace is left untouched.
+void migrateOldPrefs() {
+  if (prefs.isKey("st") || prefs.isKey("ssid") || prefs.isKey("presets")) return;
+  Preferences old;
+  if (!old.begin("mutexsign", true)) return;            // read-only; fails if it never existed
+  size_t n = old.getBytesLength("st");
+  if (n) { uint8_t buf[sizeof st + 16]; if (n <= sizeof buf) { old.getBytes("st", buf, n); prefs.putBytes("st", buf, n); } }
+  for (const char* k : { "presets", "key", "ssid", "pass", "ctext" })
+    if (old.isKey(k)) prefs.putString(k, old.getString(k, ""));
+  for (const char* k : { "rmode", "rbri", "cmode" })
+    if (old.isKey(k)) prefs.putUChar(k, old.getUChar(k, 0));
+  if (old.isKey("ccolor")) prefs.putUInt("ccolor", old.getUInt("ccolor", 0));
+  if (old.isKey("cpre"))   prefs.putInt("cpre", old.getInt("cpre", -1));
+  old.end();
+  Serial.println("[SemaphoreSign] settings migrated from the old \"mutexsign\" namespace");
+}
+
 void loadAll() {
-  prefs.begin("mutexsign", false);
+  prefs.begin("semaphoresign", false);
+  migrateOldPrefs();
   if (prefs.getBytesLength("st") == sizeof st) {
     prefs.getBytes("st", &st, sizeof st);
     if (st.version != SETTINGS_VER) defaultSettings();
+    // boards set up before the rename keep their old default mDNS name otherwise
+    if (!strcmp(st.host, "mutexsign")) { strlcpy(st.host, "semaphoresign", sizeof st.host); saveSettings(); }
   } else defaultSettings();
   String p = prefs.getString("presets", "");
   if (p.length()) presetsFromString(p); else defaultPresets();
@@ -1191,7 +1212,7 @@ void updateRing(uint32_t now) {
 //  Web portal
 // ============================================================================
 const char PAGE[] PROGMEM = R"rawliteral(<!doctype html><html><head><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>MutexSign</title><style>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>SemaphoreSign</title><style>
 :root{--bg:#080604;--card:#151009;--fg:#fff3d9;--mut:#d1ad70;--acc:#ffb000;--ln:#5a4420}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{padding:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -1293,7 +1314,7 @@ clearTimeout(wT);wArm=0;b.disabled=true;b.textContent='Saving...';wmsg('Saving..
 try{const r=await api('/api/wifi',{ssid:$('ssid').value,pass:$('pass').value,aponly:ap?1:0});if(!r.ok)bad='The sign refused it (HTTP '+r.status+').'}
 catch(e){}   // the sign drops the connection while it reboots: expected
 if(bad){wmsg(bad);b.disabled=false;b.textContent='Save & reboot';return}
-wmsg(ap?'Saved. The sign is restarting in access-point mode.':'Saved. The sign is restarting and joining "'+ssid+'" (up to 15 s). Reconnect your phone to your normal Wi-Fi, then open http://'+((S.s&&S.s.host)||'mutexsign')+'.local, or hold the knob for 4 s to read its address. If it cannot join, it comes back as its own MUTEXSIGN-XXXX network.')}
+wmsg(ap?'Saved. The sign is restarting in access-point mode.':'Saved. The sign is restarting and joining "'+ssid+'" (up to 15 s). Reconnect your phone to your normal Wi-Fi, then open http://'+((S.s&&S.s.host)||'semaphoresign')+'.local, or hold the knob for 4 s to read its address. If it cannot join, it comes back as its own SEMAPHORESIGN-XXXX network.')}
 async function load(){const s=await get();if(s){S=s;render()}}
 load();setInterval(async()=>{const s=await get();if(s){S=s;quick()}},4000);
 </script></body></html>)rawliteral";
@@ -1406,7 +1427,7 @@ void handleWifi() {
 
 void setupServer() {
   server.on("/", []() {
-    if (apMode) Serial.printf("[MutexSign] HTTP / from %s\n", server.client().remoteIP().toString().c_str());
+    if (apMode) Serial.printf("[SemaphoreSign] HTTP / from %s\n", server.client().remoteIP().toString().c_str());
     server.send_P(200, "text/html", PAGE);
   });
   server.on("/api/state", handleState);
@@ -1422,7 +1443,7 @@ void setupServer() {
   // connectivity checks (/generate_204, /hotspot-detect.html, /connecttest.txt, ...) land in this handler,
   // so they get redirected to the portal and the phone opens it as a "sign in to network" page.
   server.onNotFound([]() {
-    if (apMode) Serial.printf("[MutexSign] HTTP %s%s from %s -> redirect\n", server.hostHeader().c_str(), server.uri().c_str(),
+    if (apMode) Serial.printf("[SemaphoreSign] HTTP %s%s from %s -> redirect\n", server.hostHeader().c_str(), server.uri().c_str(),
                               server.client().remoteIP().toString().c_str());   // phones' captive-portal probes show up here
     server.sendHeader("Location", apMode ? "http://" + ipStr + "/" : String("/"));
     server.sendHeader("Cache-Control", "no-store");
@@ -1451,10 +1472,10 @@ void startWifi() {
     const uint8_t* m = nullptr;
     if (ev == ARDUINO_EVENT_WIFI_AP_STACONNECTED) m = info.wifi_ap_staconnected.mac;
     else if (ev == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) m = info.wifi_ap_stadisconnected.mac;
-    if (m) Serial.printf("[MutexSign] AP client %02X:%02X:%02X:%02X:%02X:%02X %s\n", m[0], m[1], m[2], m[3], m[4], m[5],
+    if (m) Serial.printf("[SemaphoreSign] AP client %02X:%02X:%02X:%02X:%02X:%02X %s\n", m[0], m[1], m[2], m[3], m[4], m[5],
                          ev == ARDUINO_EVENT_WIFI_AP_STACONNECTED ? "joined" : "left");
     else if (ev == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED)
-      Serial.printf("[MutexSign] AP client got IP %s\n", IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
+      Serial.printf("[SemaphoreSign] AP client got IP %s\n", IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
   });
   if (!st.apOnly && ssid.length()) {
     WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true);
@@ -1469,17 +1490,17 @@ void startWifi() {
     configTzTime(st.tz, "pool.ntp.org", "time.nist.gov");
   } else {
     apMode = true;
-    char nm[24]; snprintf(nm, sizeof nm, "MUTEXSIGN-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
+    char nm[24]; snprintf(nm, sizeof nm, "SEMAPHORESIGN-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
     apName = nm;
     WiFi.mode(WIFI_AP);
     bool apOk = WiFi.softAP(nm, AP_PASSWORD);
-    Serial.printf("[MutexSign] access point \"%s\" (password %s) %s, channel %d\n", nm, AP_PASSWORD, apOk ? "started" : "FAILED to start", WiFi.channel());
+    Serial.printf("[SemaphoreSign] access point \"%s\" (password %s) %s, channel %d\n", nm, AP_PASSWORD, apOk ? "started" : "FAILED to start", WiFi.channel());
     ipStr = WiFi.softAPIP().toString();
     dns.start(53, "*", WiFi.softAPIP());         // captive portal: answer every hostname with our address
     dnsOn = true;
   }
   if (MDNS.begin(st.host)) MDNS.addService("http", "tcp", 80);
-  Serial.printf("[MutexSign] %s %s  http://%s.local\n", apMode ? "AP" : "IP", ipStr.c_str(), st.host);
+  Serial.printf("[SemaphoreSign] %s %s  http://%s.local\n", apMode ? "AP" : "IP", ipStr.c_str(), st.host);
 }
 
 // ============================================================================

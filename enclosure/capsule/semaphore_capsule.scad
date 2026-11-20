@@ -10,7 +10,7 @@
  */
 
 // ============================================================================
-//  MutexSign "Capsule" enclosure  —  parametric OpenSCAD model
+//  SemaphoreSign "Capsule" enclosure  —  parametric OpenSCAD model
 // ----------------------------------------------------------------------------
 //  Holds: 3x Adafruit 0.54" Quad Alphanumeric FeatherWing (butted end to end, 12 chars),
 //         Adafruit I2C STEMMA QT Rotary Encoder w/ NeoPixel (PID 5880),

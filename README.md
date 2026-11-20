@@ -1,4 +1,4 @@
-Mutex: A desk status display with one rule: only one thing gets your attention at a time.
+Semaphore: A desk status display that controls access to one limited resource: your attention.
 
 
 <div align="center">
@@ -6,7 +6,7 @@ Mutex: A desk status display with one rule: only one thing gets your attention a
 <br>
 <a href="https://discord.gg/wjqgUjv8Re"><img src="https://cdn.simpleicons.org/discord/5865F2" alt="Discord" height="40" width="40"></a>
 <br><br>
-<strong><a href="https://discord.gg/wjqgUjv8Re">Mutex Discord</a></strong> — community help, builds, and troubleshooting
+<strong><a href="https://discord.gg/wjqgUjv8Re">Semaphore Discord</a></strong> — community help, builds, and troubleshooting
 </div>
 
 ## Install the firmware from your browser
@@ -26,10 +26,10 @@ on Linux you may need serial-port permission first (for example add yourself to 
 4. The log shows `Chip detected: ESP32-S3`. Click **Install** and wait for **Flash complete**: don't unplug before that
    (it takes under a minute). The sign restarts by itself.
 5. On first boot the display runs a lamp test, then pages through the sign's network details one item at a time
-   (`AP`, `MUTEXSIGN-XXXX`, `PW`, `MUTEXSIGN`, `192.168.4.1`). Join that Wi-Fi network from your phone or computer
-   (password `MUTEXSIGN`): the sign's web portal should open by itself ("sign in to network"), or browse to `http://192.168.4.1`.
+   (`AP`, `SEMAPHORESIGN-XXXX`, `PW`, `SEMAPHORESIGN`, `192.168.4.1`). Join that Wi-Fi network from your phone or computer
+   (password `SEMAPHORESIGN`): the sign's web portal should open by itself ("sign in to network"), or browse to `http://192.168.4.1`.
 6. In the portal, open **Wi-Fi**, enter your home network and save: the sign reboots, joins your network, and is then reachable at
-   **http://mutexsign.local** (hold the encoder button for 4 seconds, or pick `IP ADDR` in its menu, to see the address on the display).
+   **http://semaphoresign.local** (hold the encoder button for 4 seconds, or pick `IP ADDR` in its menu, to see the address on the display).
    Set an **access key** in the portal's settings too (see Security notes below).
 
 ### Updating later
@@ -58,14 +58,14 @@ Building from source with PlatformIO (`pio run -t upload`) still works as before
 
 ## Enclosure
 
-The enclosure is a parametric OpenSCAD model, [`enclosure/capsule/mutex_capsule.scad`](enclosure/capsule/mutex_capsule.scad) (the source of truth:
+The enclosure is a parametric OpenSCAD model, [`enclosure/capsule/semaphore_capsule.scad`](enclosure/capsule/semaphore_capsule.scad) (the source of truth:
 measure your parts and adjust the values marked "measure"). Ready-to-print **STL and 3MF files are published on MakerWorld**, not in this repository.
 They are generated from the SCAD file and carry the same license (CC BY-NC-SA 4.0), so choose the matching license when you share them.
 
 ## Security notes
 
-- Until you change it, the sign's own Wi-Fi access point (used for first setup and when no home Wi-Fi is saved) is named `MUTEXSIGN-XXXX`
-  with the **publicly documented default password `MUTEXSIGN`**, so anyone within range can join it. Save your home Wi-Fi in the web portal
+- Until you change it, the sign's own Wi-Fi access point (used for first setup and when no home Wi-Fi is saved) is named `SEMAPHORESIGN-XXXX`
+  with the **publicly documented default password `SEMAPHORESIGN`**, so anyone within range can join it. Save your home Wi-Fi in the web portal
   (the sign then stops using the access point) and **set an access key** in the portal's settings.
 - The web portal and its `/api/*` endpoints use plain HTTP and have **no authentication until you set an access key**. Keep the sign on a trusted
   network and do not expose it to the internet.
@@ -82,6 +82,6 @@ First-party source files include a copyright / SPDX / `[AI-DIRECTIVE]` header. D
 
 Third-party code is **not** covered by this license and keeps its own: the esptool-js flasher is vendored in `webflasher/vendor/` (Apache-2.0), and the libraries PlatformIO downloads at build time (Adafruit LED Backpack, GFX, BusIO, seesaw and NeoPixel, the ESP32 Arduino core) are compiled into the published firmware images. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-[![Repo analytics](https://raw.githubusercontent.com/yashmulgaonkar/repo-analytics/main/out/mutex/analytics.svg)](https://raw.githubusercontent.com/yashmulgaonkar/repo-analytics/main/out/mutex/analytics.svg)
+[![Repo analytics](https://raw.githubusercontent.com/yashmulgaonkar/repo-analytics/main/out/semaphore/analytics.svg)](https://raw.githubusercontent.com/yashmulgaonkar/repo-analytics/main/out/semaphore/analytics.svg)
 
 If you want to make your own analytics for your repos, [click here](https://github.com/yashmulgaonkar/repo-analytics).

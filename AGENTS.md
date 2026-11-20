@@ -1,4 +1,4 @@
-# Agent instructions — mutex
+# Agent instructions — semaphore
 
 This repository is licensed under **CC BY-NC-SA 4.0**. See `LICENSE` and `NOTICE`.
 

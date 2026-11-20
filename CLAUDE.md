@@ -1,4 +1,4 @@
-# MutexSign — project context for Claude
+# SemaphoreSign — project context for Claude
 
 A 12-character 14-segment "busy light" / message board that sits on top of a
 work monitor. Started in a claude.ai chat; this file carries that context over.
@@ -35,8 +35,8 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 | `.github/workflows/pages.yml` | Builds the firmware (`pio run`), runs `build_bundle.py`, deploys `webflasher/` + `firmware/` to Pages. Needs Settings > Pages > Source: GitHub Actions |
 | `THIRD_PARTY_NOTICES.md`, `NOTICE`, `LICENSE` | Third-party licenses, attribution text, and the verbatim CC BY-NC-SA 4.0 legal code |
 | `simulator/index.html` (author's local copy, not in the repo) | Browser simulator: JS port of the firmware's effects, faces, encoder UI and LED logic |
-| `enclosure/capsule/mutex_capsule.scad` | **Parametric OpenSCAD model** of the chosen "Capsule" enclosure (source of truth) |
-| `enclosure/capsule/stl/` (author's local copy, not in the repo; published on MakerWorld) | Print-ready `mutex_*.stl` parts, `mutex_capsule.3mf` and the window SVG, exported from the SCAD |
+| `enclosure/capsule/semaphore_capsule.scad` | **Parametric OpenSCAD model** of the chosen "Capsule" enclosure (source of truth) |
+| `enclosure/capsule/stl/` (author's local copy, not in the repo; published on MakerWorld) | Print-ready `semaphore_*.stl` parts, `semaphore_capsule.3mf` and the window SVG, exported from the SCAD |
 | `tools/render/sdf.py`, `concepts.py` (author's local copy, not in the repo) | Tiny numpy ray-marcher used for the concept renders |
 | `docs/` (author's local copy, not in the repo) | `HISTORY.md` and concept renders, colour study, model preview |
 
@@ -49,7 +49,7 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 - Encoder UI: turn = browse presets; click = BUSY/FREE toggle; double = focus timer;
   triple = face toggle; long = settings menu; hold 4 s = IP.
 - NeoPixel priority: notify flash > menu > browse preview > off-hours > timer done > timer progress > LED mode.
-- Web portal at `http://mutexsign.local` (AP fallback `MUTEXSIGN-XXXX` / `MUTEXSIGN`), JSON API under `/api/*`,
+- Web portal at `http://semaphoresign.local` (AP fallback `SEMAPHORESIGN-XXXX` / `SEMAPHORESIGN`), JSON API under `/api/*`,
   optional access key, USB serial commands (`MSG`, `SHOW`, `PRESET`, `FACE`, `TIMER`, ...).
 - Settings persisted with Preferences (`st` struct, `SETTINGS_VER`); presets stored as `mode|RRGGBB|text` lines.
 - Renamed global `timerEnd` to `tmrEnd` (collides with the ESP32 core function `timerEnd`).
@@ -143,4 +143,4 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 
 ## Conventions
 - Units mm; enclosure axes: X along the capsule, −Y = front (display side), Z up.
-- `mutex_capsule.scad` is the single source of truth for the enclosure. After changing a default, re-export the STLs/3MF.
+- `semaphore_capsule.scad` is the single source of truth for the enclosure. After changing a default, re-export the STLs/3MF.
