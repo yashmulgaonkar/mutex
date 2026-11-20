@@ -19,7 +19,7 @@ on Linux you may need serial-port permission first (for example add yourself to 
 
 ### First install
 
-1. Open **https://yashmulgaonkar.github.io/mutex/**.
+1. Open **https://yashmulgaonkar.github.io/semaphore/**.
 2. Plug the ESP32-S3-Zero into your computer (it can stay inside the sign; use the USB-C opening at the back).
 3. Leave **Full install** selected and click **Connect**. In the browser's port chooser pick the ESP32-S3 device
    (usually listed as *USB JTAG/serial debug unit*, or a *USB Serial* / COM entry that appears when you plug it in) and click **Connect**.
@@ -74,7 +74,7 @@ They are generated from the SCAD file and carry the same license (CC BY-NC-SA 4.
 
 All original firmware, enclosure models (OpenSCAD source and exported files), tools and documentation in this repository are licensed under **[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-nc-sa/4.0/)** (`SPDX-License-Identifier: CC-BY-NC-SA-4.0`, see [LICENSE](LICENSE)). Required attribution text is in [NOTICE](NOTICE).
 
-- **Attribution:** credit the author (Yash Mulgaonkar), link to https://github.com/yashmulgaonkar/mutex and the license when you share or adapt this work, and indicate if you made changes.
+- **Attribution:** credit the author (Yash Mulgaonkar), link to https://github.com/yashmulgaonkar/semaphore and the license when you share or adapt this work, and indicate if you made changes.
 - **NonCommercial:** you may not use this material for commercial purposes without separate permission.
 - **ShareAlike:** adaptations must be released under the same license.
 
