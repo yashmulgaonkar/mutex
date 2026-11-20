@@ -182,8 +182,8 @@ knob_rib_t  = 1.6;  // thickness of the knob's stiffening spokes
 knob_lead   = 0.4;  // lead-in chamfer at the knob's bore mouth (counters first-layer squash on the bed)
 
 /* [Monitor clip] */
-monitor_depth = 20;  // thickness of your monitor's top edge (measure!)
-front_lip     = 5;   // how far the clip reaches down the front
+monitor_depth = 35;  // thickness of your monitor's top edge (measure!)
+front_lip     = 8;   // how far the clip reaches down the front
 back_lip      = 30;  // how far it reaches down the back
 clip_wall     = 3;
 clip_len      = 120;
