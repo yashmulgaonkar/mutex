@@ -1230,12 +1230,21 @@ onchange="ring({b:this.value})"><output id=rbo></output></label>
 <section><h2>Wi-Fi</h2><div class=row><input id=ssid placeholder="Network name" class=grow>
 <input id=pass type=password placeholder=Password class=grow></div>
 <label><input id=aponly type=checkbox> Access-point only (don't join a network)</label>
-<button onclick="wifi()">Save &amp; reboot</button></section></main>
+<button id=wbtn onclick="wifi()">Save &amp; reboot</button>
+<div id=wmsg style="color:var(--mut);font-size:13px;margin-top:8px"></div></section></main>
+<div id=keybox style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9;align-items:center;justify-content:center;padding:16px">
+<section style="width:min(340px,100%)"><h2>Access key</h2><div class=row><input id=keyin type=password class=grow placeholder="Access key">
+<button class=p id=keyok>Unlock</button></div></section></div>
 <script>
-let S={},P=[],K=localStorage.k||'';const $=i=>document.getElementById(i);
+let S={},P=[],K='';try{K=localStorage.k||''}catch(e){}const $=i=>document.getElementById(i);
+const setK=k=>{K=k;try{localStorage.k=k}catch(e){}};
+// no prompt()/confirm(): captive-portal browsers (what opens when you join the sign's own Wi-Fi) suppress them
+let KP=null;
+function askKey(){if(KP)return KP;KP=new Promise(r=>{const b=$('keybox'),i=$('keyin');b.style.display='flex';i.value='';i.focus();
+const done=()=>{b.style.display='none';KP=null;r(i.value)};$('keyok').onclick=done;i.onkeydown=e=>{if(e.key==='Enter')done()}});return KP}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(p,d={}){d.key=K;const r=await fetch(p,{method:'POST',body:new URLSearchParams(d)});
-if(r.status==401){const k=prompt('Access key');if(k===null)return r;K=k;localStorage.k=K;return api(p,d)}return r}
+if(r.status==401){const k=await askKey();if(!k)return r;setK(k);return api(p,d)}return r}
 async function get(){const r=await api('/api/state');return r.ok?r.json():null}
 const SF=[['brightness','Display brightness',0,15],['speed','Animation speed',1,10],['ledMode','LED mode',0,4,'led'],
 ['ledBright','LED brightness',0,255],['idleFace','Idle face after (min)',0,60],['cameo','Face cameo every (s)',0,600],
@@ -1272,8 +1281,19 @@ function timer(on){go('/api/timer',{min:on?$('tmin').value:0,label:$('tlab').val
 async function saveP(){await api('/api/presets',{data:P.map(p=>p.m+'|'+p.c.slice(1)+'|'+p.t.replace(/[\n|]/g,' ')).join('\n')});load()}
 async function saveS(){const d={};SF.forEach(([k,,,,t])=>{const e=$('s_'+k);d[k]=t=='b'?(e.checked?1:0):e.value});
 d.tz=$('s_tz').value;d.host=$('s_host').value;const nk=$('s_key').value;if(nk)d.newkey=nk;
-await api('/api/settings',d);if(nk){K=nk==='-'?'':nk;localStorage.k=K}load()}
-function wifi(){if(confirm('Save Wi-Fi and reboot?'))api('/api/wifi',{ssid:$('ssid').value,pass:$('pass').value,aponly:$('aponly').checked?1:0})}
+await api('/api/settings',d);if(nk)setK(nk==='-'?'':nk);load()}
+let wArm=0,wT=0;
+const wmsg=t=>{$('wmsg').textContent=t};
+async function wifi(){
+const ssid=$('ssid').value.trim(),ap=$('aponly').checked,b=$('wbtn');
+if(!ssid&&!ap){wmsg('Enter the network name first, or tick Access-point only.');return}
+if(!wArm){wArm=1;b.textContent='Tap again to save & reboot';wmsg('This saves the network and restarts the sign.');
+clearTimeout(wT);wT=setTimeout(()=>{wArm=0;b.textContent='Save & reboot';wmsg('')},6000);return}
+clearTimeout(wT);wArm=0;b.disabled=true;b.textContent='Saving...';wmsg('Saving...');let bad='';
+try{const r=await api('/api/wifi',{ssid:$('ssid').value,pass:$('pass').value,aponly:ap?1:0});if(!r.ok)bad='The sign refused it (HTTP '+r.status+').'}
+catch(e){}   // the sign drops the connection while it reboots: expected
+if(bad){wmsg(bad);b.disabled=false;b.textContent='Save & reboot';return}
+wmsg(ap?'Saved. The sign is restarting in access-point mode.':'Saved. The sign is restarting and joining "'+ssid+'" (up to 15 s). Reconnect your phone to your normal Wi-Fi, then open http://'+((S.s&&S.s.host)||'mutexsign')+'.local, or hold the knob for 4 s to read its address. If it cannot join, it comes back as its own MUTEXSIGN-XXXX network.')}
 async function load(){const s=await get();if(s){S=s;render()}}
 load();setInterval(async()=>{const s=await get();if(s){S=s;quick()}},4000);
 </script></body></html>)rawliteral";
@@ -1385,7 +1405,10 @@ void handleWifi() {
 }
 
 void setupServer() {
-  server.on("/", []() { server.send_P(200, "text/html", PAGE); });
+  server.on("/", []() {
+    if (apMode) Serial.printf("[MutexSign] HTTP / from %s\n", server.client().remoteIP().toString().c_str());
+    server.send_P(200, "text/html", PAGE);
+  });
   server.on("/api/state", handleState);
   server.on("/api/show", handleShow);
   server.on("/api/preset", handlePreset);
@@ -1399,6 +1422,8 @@ void setupServer() {
   // connectivity checks (/generate_204, /hotspot-detect.html, /connecttest.txt, ...) land in this handler,
   // so they get redirected to the portal and the phone opens it as a "sign in to network" page.
   server.onNotFound([]() {
+    if (apMode) Serial.printf("[MutexSign] HTTP %s%s from %s -> redirect\n", server.hostHeader().c_str(), server.uri().c_str(),
+                              server.client().remoteIP().toString().c_str());   // phones' captive-portal probes show up here
     server.sendHeader("Location", apMode ? "http://" + ipStr + "/" : String("/"));
     server.sendHeader("Cache-Control", "no-store");
     server.send(302, "text/plain", "");
@@ -1421,6 +1446,16 @@ void bootFrame(uint32_t t, const char* label) {
 void startWifi() {
   String ssid = prefs.getString("ssid", ""), pass = prefs.getString("pass", "");
   WiFi.setHostname(st.host);
+  // Serial diagnostics for the sign's own access point: shows whether a phone gets as far as joining
+  WiFi.onEvent([](arduino_event_id_t ev, arduino_event_info_t info) {
+    const uint8_t* m = nullptr;
+    if (ev == ARDUINO_EVENT_WIFI_AP_STACONNECTED) m = info.wifi_ap_staconnected.mac;
+    else if (ev == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) m = info.wifi_ap_stadisconnected.mac;
+    if (m) Serial.printf("[MutexSign] AP client %02X:%02X:%02X:%02X:%02X:%02X %s\n", m[0], m[1], m[2], m[3], m[4], m[5],
+                         ev == ARDUINO_EVENT_WIFI_AP_STACONNECTED ? "joined" : "left");
+    else if (ev == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED)
+      Serial.printf("[MutexSign] AP client got IP %s\n", IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
+  });
   if (!st.apOnly && ssid.length()) {
     WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true);
     WiFi.setSleep(true);     // modem sleep between beacons (the core's default; kept explicit)
@@ -1436,7 +1471,9 @@ void startWifi() {
     apMode = true;
     char nm[24]; snprintf(nm, sizeof nm, "MUTEXSIGN-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
     apName = nm;
-    WiFi.mode(WIFI_AP); WiFi.softAP(nm, AP_PASSWORD);
+    WiFi.mode(WIFI_AP);
+    bool apOk = WiFi.softAP(nm, AP_PASSWORD);
+    Serial.printf("[MutexSign] access point \"%s\" (password %s) %s, channel %d\n", nm, AP_PASSWORD, apOk ? "started" : "FAILED to start", WiFi.channel());
     ipStr = WiFi.softAPIP().toString();
     dns.start(53, "*", WiFi.softAPIP());         // captive portal: answer every hostname with our address
     dnsOn = true;

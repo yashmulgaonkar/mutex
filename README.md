@@ -8,7 +8,6 @@ Mutex: A desk status display with one rule: only one thing gets your attention a
 <br><br>
 <strong><a href="https://discord.gg/wjqgUjv8Re">Mutex Discord</a></strong> — community help, builds, and troubleshooting
 </div>
----
 
 ## Install the firmware from your browser
 
