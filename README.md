@@ -26,7 +26,7 @@ on Linux you may need serial-port permission first (for example add yourself to 
 4. The log shows `Chip detected: ESP32-S3`. Click **Install** and wait for **Flash complete**: don't unplug before that
    (it takes under a minute). The sign restarts by itself.
 5. On first boot the display runs a lamp test, then pages through the sign's network details one item at a time
-   (`AP`, `SEMAPHORESIGN-XXXX`, `PW`, `SEMAPHORESIGN`, `192.168.4.1`). Join that Wi-Fi network from your phone or computer
+   (`AP`, `SEMAPHORE-XXXX`, `PW`, `SEMAPHORESIGN`, `192.168.4.1`). Join that Wi-Fi network from your phone or computer
    (password `SEMAPHORESIGN`): the sign's web portal should open by itself ("sign in to network"), or browse to `http://192.168.4.1`.
 6. In the portal, open **Wi-Fi**, enter your home network and save: the sign reboots, joins your network, and is then reachable at
    **http://semaphoresign.local** (hold the encoder button for 4 seconds, or pick `IP ADDR` in its menu, to see the address on the display).
@@ -64,7 +64,7 @@ They are generated from the SCAD file and carry the same license (CC BY-NC-SA 4.
 
 ## Security notes
 
-- Until you change it, the sign's own Wi-Fi access point (used for first setup and when no home Wi-Fi is saved) is named `SEMAPHORESIGN-XXXX`
+- Until you change it, the sign's own Wi-Fi access point (used for first setup and when no home Wi-Fi is saved) is named `SEMAPHORE-XXXX`
   with the **publicly documented default password `SEMAPHORESIGN`**, so anyone within range can join it. Save your home Wi-Fi in the web portal
   (the sign then stops using the access point) and **set an access key** in the portal's settings.
 - The web portal and its `/api/*` endpoints use plain HTTP and have **no authentication until you set an access key**. Keep the sign on a trusted

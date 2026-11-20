@@ -591,10 +591,13 @@ void fxScan(uint32_t t) {
   } else if (t < scanDur + holdDur()) drawWindow(msgG, msgLen, 0, NCH, holdOff(t - scanDur));
   else restartMode();
 }
-void fxSpin(uint32_t t) {
+void drawEndSpinners(uint32_t t) {   // counter-rotating spinners on the first and last digit
   uint32_t per = stepMs() / 3 + 40; int f = (t / per) % 8;
   fb[0] = SPIN[f] | SPIN[(f + 4) % 8];
   fb[NCH - 1] = SPIN[(8 - f) % 8] | SPIN[(12 - f) % 8];
+}
+void fxSpin(uint32_t t) {
+  drawEndSpinners(t);
   if (msgLen <= (NCH - 2)) drawWindow(msgG, msgLen, 1, (NCH - 2), -(((NCH - 2) - msgLen) / 2));
   else drawWindow(msgG, msgLen, 1, (NCH - 2), -(NCH - 2) + (int)((t / stepMs()) % (msgLen + (NCH - 2))));
 }
@@ -721,8 +724,10 @@ void drawTimer(uint32_t now) {
   char buf[16];
   snprintf(buf, sizeof buf, "%s %02u%02u", lab.substring(0, 3).c_str(), (unsigned)mm, (unsigned)sec);
   uint16_t g[16]; int n = compile(String(buf), g, 16);
+  clearFb();                                        // the outer digits would otherwise keep the previous effect's last frame
   drawWindow(g, n, FO, 8, 0);
   if ((now / 500) % 2 == 0) fb[FO + 5] |= SDP;      // blinking "colon"
+  drawEndSpinners(now);                             // same spinners and speed as the spin effect
 }
 void checkSchedule(uint32_t now) {
   if (now - lastSchedCheck < 10000 && lastSchedCheck) return;
@@ -1314,7 +1319,7 @@ clearTimeout(wT);wArm=0;b.disabled=true;b.textContent='Saving...';wmsg('Saving..
 try{const r=await api('/api/wifi',{ssid:$('ssid').value,pass:$('pass').value,aponly:ap?1:0});if(!r.ok)bad='The sign refused it (HTTP '+r.status+').'}
 catch(e){}   // the sign drops the connection while it reboots: expected
 if(bad){wmsg(bad);b.disabled=false;b.textContent='Save & reboot';return}
-wmsg(ap?'Saved. The sign is restarting in access-point mode.':'Saved. The sign is restarting and joining "'+ssid+'" (up to 15 s). Reconnect your phone to your normal Wi-Fi, then open http://'+((S.s&&S.s.host)||'semaphoresign')+'.local, or hold the knob for 4 s to read its address. If it cannot join, it comes back as its own SEMAPHORESIGN-XXXX network.')}
+wmsg(ap?'Saved. The sign is restarting in access-point mode.':'Saved. The sign is restarting and joining "'+ssid+'" (up to 15 s). Reconnect your phone to your normal Wi-Fi, then open http://'+((S.s&&S.s.host)||'semaphoresign')+'.local, or hold the knob for 4 s to read its address. If it cannot join, it comes back as its own SEMAPHORE-XXXX network.')}
 async function load(){const s=await get();if(s){S=s;render()}}
 load();setInterval(async()=>{const s=await get();if(s){S=s;quick()}},4000);
 </script></body></html>)rawliteral";
@@ -1490,7 +1495,7 @@ void startWifi() {
     configTzTime(st.tz, "pool.ntp.org", "time.nist.gov");
   } else {
     apMode = true;
-    char nm[24]; snprintf(nm, sizeof nm, "SEMAPHORESIGN-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
+    char nm[24]; snprintf(nm, sizeof nm, "SEMAPHORE-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
     apName = nm;
     WiFi.mode(WIFI_AP);
     bool apOk = WiFi.softAP(nm, AP_PASSWORD);
