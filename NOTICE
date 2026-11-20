@@ -15,6 +15,8 @@ Indicate if changes were made. Do not imply endorsement by the licensor.
 
 Commercial use is not permitted under this license without a separate written grant.
 
-Third-party components (for example the Adafruit LED Backpack and seesaw libraries and the
-ESP32 Arduino core, which PlatformIO downloads at build time) are not part of this repository
-and remain under their respective terms.
+Third-party components are not covered by this license and remain under their respective terms:
+the esptool-js browser flasher (vendored in webflasher/vendor/, Apache-2.0) and the libraries and
+ESP32 Arduino core that PlatformIO downloads at build time and that are compiled into the published
+firmware images (Adafruit LED Backpack, GFX, BusIO, seesaw and NeoPixel libraries, the Arduino-ESP32
+core and ESP-IDF). See THIRD_PARTY_NOTICES.md for the list and their licenses.

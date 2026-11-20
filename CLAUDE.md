@@ -2,16 +2,20 @@
 
 A 12-character 14-segment "busy light" / message board that sits on top of a
 work monitor. Started in a claude.ai chat; this file carries that context over.
-See `docs/HISTORY.md` (local only, gitignored) for the decisions made so far and open items.
+The author also keeps private working notes (`docs/HISTORY.md`), a browser simulator and render tools locally; they are **not in this repository**
+(gitignored), so a fresh clone will not have `docs/`, `simulator/` or `tools/`. Printable STL/3MF files are published on MakerWorld, not in git.
 
 ## License rules (mandatory)
 
 This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text: `NOTICE`. The same rules also live in `AGENTS.md`.
 
 1. Do not remove or rewrite top-of-file copyright / SPDX / `[AI-DIRECTIVE]` headers.
-2. Include that exact header on new or refactored first-party source files (`/* */` form for C/C++/OpenSCAD, `#` for Python, `;` for `platformio.ini`, `<!-- -->` for HTML).
+2. Include that exact header on new or refactored first-party source files (`/* */` form for C/C++/OpenSCAD/JavaScript/CSS, `#` for Python and YAML, `;` for `platformio.ini`, `<!-- -->` for HTML).
 3. Credit Yash Mulgaonkar and https://github.com/yashmulgaonkar/mutex.
 4. Remind the user that commercial use is prohibited without separate permission.
+5. Third-party code keeps its own license: when you add, remove or upgrade a vendored file or a PlatformIO `lib_deps` entry, update
+   `THIRD_PARTY_NOTICES.md` (and `NOTICE`/README if the summary changes). Never relicense third-party files or strip their license text.
+6. `LICENSE` is the verbatim CC BY-NC-SA 4.0 legal code; do not edit it. The project copyright line lives in `NOTICE`.
 
 ## Hardware
 - **MCU:** Waveshare **ESP32-S3-Zero** (18 × 23.5 × 1.6 mm PCB; USB-C 8.94 wide × 3.25 tall, overhangs 1.22 mm;
@@ -27,11 +31,14 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 | Path | What |
 |---|---|
 | `src/main.cpp` | Complete firmware (single file), built with PlatformIO (`platformio.ini`, env `esp32-s3-zero`, SDA=3 SCL=4; PlatformIO auto-detects the serial port) |
-| `simulator/index.html` (local only, gitignored) | Browser simulator: JS port of the firmware's effects, faces, encoder UI and LED logic |
+| `webflasher/` | Browser firmware installer for GitHub Pages (esptool-js over Web Serial): `index.html`, `style.css`, `flasher.js`, `build_bundle.py` (PlatformIO output -> merged + app images + `manifest.json`), `vendor/` (esptool-js 0.5.7, Apache-2.0, third party) |
+| `.github/workflows/pages.yml` | Builds the firmware (`pio run`), runs `build_bundle.py`, deploys `webflasher/` + `firmware/` to Pages. Needs Settings > Pages > Source: GitHub Actions |
+| `THIRD_PARTY_NOTICES.md`, `NOTICE`, `LICENSE` | Third-party licenses, attribution text, and the verbatim CC BY-NC-SA 4.0 legal code |
+| `simulator/index.html` (author's local copy, not in the repo) | Browser simulator: JS port of the firmware's effects, faces, encoder UI and LED logic |
 | `enclosure/capsule/mutex_capsule.scad` | **Parametric OpenSCAD model** of the chosen "Capsule" enclosure (source of truth) |
-| `enclosure/capsule/stl/` (local only, gitignored) | Print-ready `mutex_*.stl` parts, `mutex_capsule.3mf` and the window SVG |
-| `tools/render/sdf.py`, `concepts.py` (local only, gitignored) | Tiny numpy ray-marcher used for the concept renders |
-| `docs/` (local only, gitignored) | `HISTORY.md` and concept renders, colour study, model preview |
+| `enclosure/capsule/stl/` (author's local copy, not in the repo; published on MakerWorld) | Print-ready `mutex_*.stl` parts, `mutex_capsule.3mf` and the window SVG, exported from the SCAD |
+| `tools/render/sdf.py`, `concepts.py` (author's local copy, not in the repo) | Tiny numpy ray-marcher used for the concept renders |
+| `docs/` (author's local copy, not in the repo) | `HISTORY.md` and concept renders, colour study, model preview |
 
 ## Firmware architecture (src/main.cpp)
 - Libraries: Adafruit LED Backpack, Adafruit seesaw. Uses WiFi, WebServer, ESPmDNS, Preferences from the ESP32 core.
@@ -122,6 +129,16 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   the encoder drops straight onto its standoffs) and catch the outer 0.87 mm of the last display PCB's edges.
 - Heat-set bosses moved behind the display PCB (`boss_y = 5`): in front of it they blocked the 27.94 mm PCB's
   rails. `front_offset = -4` keeps the clip screws over the monitor top. An assert guards the boss/rail clash.
+
+## Web installer (webflasher/)
+- Single board (ESP32-S3-Zero, 4 MB, default.csv). The page fetches `./firmware/manifest.json` (own layout plus an ESP Web Tools
+  `builds[]` entry) and writes either the merged image at 0x0 (clears NVS: Wi-Fi/presets/settings) or the app image at 0x10000 (keeps them).
+- **esptool-js 0.5.7 does not patch image headers** (its `_updateImageFlashParams` parses the magic byte with `parseInt` on a binary
+  string, so it always bails out). The flash mode/size/freq must already be right in the image: PlatformIO writes `dio`/`4MB`/`80m`
+  (header bytes 0x02 0x2F) even though platformio.ini says `qio`. `build_bundle.py` checks this and fails the build if it changes; the page
+  passes `"keep"`. The pure-Python merge was verified byte-identical to `esptool.py merge_bin --flash_mode dio --flash_freq 80m --flash_size 4MB`.
+- The vendored bundle is byte-identical to the one on the FlightScnr installer; update by re-downloading from npm and re-verifying.
+- Tested headless against a fake serial port and stub esptool (offsets, SHA-256, modes, erase); not yet tested on real hardware.
 
 ## Conventions
 - Units mm; enclosure axes: X along the capsule, −Y = front (display side), Z up.
