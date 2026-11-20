@@ -138,7 +138,8 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   (header bytes 0x02 0x2F) even though platformio.ini says `qio`. `build_bundle.py` checks this and fails the build if it changes; the page
   passes `"keep"`. The pure-Python merge was verified byte-identical to `esptool.py merge_bin --flash_mode dio --flash_freq 80m --flash_size 4MB`.
 - The vendored bundle is byte-identical to the one on the FlightScnr installer; update by re-downloading from npm and re-verifying.
-- Tested headless against a fake serial port and stub esptool (offsets, SHA-256, modes, erase); not yet tested on real hardware.
+- Tested headless against a fake serial port and stub esptool (offsets, SHA-256, modes, erase), and confirmed working on real hardware by
+  the author (2026-11-20) through the deployed GitHub Pages site. User-facing steps are in the README ("Install the firmware from your browser").
 
 ## Conventions
 - Units mm; enclosure axes: X along the capsule, −Y = front (display side), Z up.
