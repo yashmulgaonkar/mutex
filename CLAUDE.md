@@ -42,7 +42,7 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
 - Encoder UI: turn = browse presets; click = BUSY/FREE toggle; double = focus timer;
   triple = face toggle; long = settings menu; hold 4 s = IP.
 - NeoPixel priority: notify flash > menu > browse preview > off-hours > timer done > timer progress > LED mode.
-- Web portal at `http://mutexsign.local` (AP fallback `MutexSign-XXXX` / `mutexsign`), JSON API under `/api/*`,
+- Web portal at `http://mutexsign.local` (AP fallback `MUTEXSIGN-XXXX` / `MUTEXSIGN`), JSON API under `/api/*`,
   optional access key, USB serial commands (`MSG`, `SHOW`, `PRESET`, `FACE`, `TIMER`, ...).
 - Settings persisted with Preferences (`st` struct, `SETTINGS_VER`); presets stored as `mode|RRGGBB|text` lines.
 - Renamed global `timerEnd` to `tmrEnd` (collides with the ESP32 core function `timerEnd`).

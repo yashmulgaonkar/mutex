@@ -33,9 +33,9 @@
 #define ENC_NEO_PIN      6       // seesaw pin for the encoder's own NeoPixel (not the ring)
 #define RING_PIN         6       // ESP32 GPIO driving the 12-LED NeoPixel ring's DIN
 #define RING_N           12
-#define RING_OFFSET      0       // physical LED index that sits at 12 o'clock (set after fitting)
+#define RING_OFFSET      11       // physical LED index that sits at 12 o'clock (set after fitting)
 #define RING_REVERSE     0       // 1 if the ring's LED order runs counter-clockwise when seen from outside
-#define AP_PASSWORD      "mutexsign"   // >= 8 chars
+#define AP_PASSWORD      "MUTEXSIGN"   // >= 8 chars (uppercase: it is shown on the display)
 #define I2C_BUS          Wire    // QT Py ESP32-S3 STEMMA port: use Wire1
 // #define I2C_SDA 21            // uncomment to force pins (generic DevKit)
 // #define I2C_SCL 22
@@ -73,9 +73,9 @@
 
 // ---- Modes -----------------------------------------------------------------
 enum { M_STATIC, M_SCROLL, M_BOUNCE, M_TYPE, M_FLIP, M_SPARKLE, M_RAIN,
-       M_SCAN, M_SPIN, M_BLINK, M_FACE, M_COUNT };
+       M_SCAN, M_SPIN, M_BLINK, M_FACE, M_FADE, M_SPINFADE, M_COUNT };   // new modes go after M_FACE: saved mode numbers stay valid
 const char* MODE_NAMES[M_COUNT] = { "static","scroll","bounce","type","flip",
-  "sparkle","rain","scan","spin","blink","face" };
+  "sparkle","rain","scan","spin","blink","face","fade","spinfade" };
 
 // ---- Face expressions ------------------------------------------------------
 enum { F_AUTO, F_HAPPY, F_SAD, F_ANGRY, F_SLEEPY, F_DIZZY, F_WINK,
@@ -207,7 +207,7 @@ void buildFont() {
 int compile(const String& s, uint16_t* out, int maxn) {
   int n = 0;
   for (size_t i = 0; i < s.length() && n < maxn; i++) {
-    char c = s[i];
+    char c = toupper((unsigned char)s[i]);   // lowercase looks bad on 14-segment: everything shown is uppercase
     if (c == '.' && n > 0 && !(out[n - 1] & SDP) && s[i - 1] != '.') {
       out[n - 1] |= SDP; continue;
     }
@@ -238,9 +238,15 @@ void render() {
   forceRender = false;
 }
 
-void applyBrightness() {
-  for (int d = 0; d < NDISP; d++) if (dispOK[d]) disp[d].setBrightness(st.brightness);
+uint8_t appliedBri = 255;
+uint8_t fadeBri = 255;    // set by the FADE effect each frame (255 = no override); the loop applies it
+float   fadeW = 1;        // FADE position 0..1, shared with the ring
+void setBri(uint8_t b) {
+  if (b == appliedBri) return;
+  appliedBri = b;
+  for (int d = 0; d < NDISP; d++) if (dispOK[d]) disp[d].setBrightness(b);
 }
+void applyBrightness() { appliedBri = 255; setBri(st.brightness); }
 
 int stepMs() { return 420 - st.speed * 35; }           // 385 .. 70 ms
 int centerOff(int len, int width) {
@@ -295,12 +301,12 @@ void defaultSettings() {
 
 void defaultPresets() {
   const char* d[][3] = {
-    {"BUSY", "spin", "FF0000"},      {"FREE", "flip", "00FF20"},
+    {"BUSY", "spinfade", "FF0000"},      {"FREE", "flip", "00FF20"},
     {"IN A MEETING", "scroll", "FF1000"}, {"ON A CALL", "scan", "FF0040"},
-    {"FOCUS", "sparkle", "8000FF"},  {"HEADS DOWN - PING ME LATER", "scroll", "8000FF"},
+    {"FOCUS TIME", "sparkle", "8000FF"},  {"HEADS DOWN - PING ME LATER", "scroll", "8000FF"},
     {"BRB", "type", "FFA000"},       {"LUNCH", "rain", "FF6000"},
     {"COME IN", "flip", "00FF60"},   {"auto", "face", "00A0FF"},
-    {"OOO", "blink", "404040"},
+    {"AWAY", "blink", "404040"},
   };
   numPresets = sizeof(d) / sizeof(d[0]);
   for (int i = 0; i < numPresets; i++) {
@@ -329,7 +335,7 @@ void presetsFromString(const String& s) {
     String txt = line.substring(b + 1); if (txt.length() > MAX_TEXT) txt = txt.substring(0, MAX_TEXT);
     presets[numPresets].mode = modeFromName(line.substring(0, a));
     presets[numPresets].color = parseColor(line.substring(a + 1, b));
-    presets[numPresets].text = txt;
+    txt.toUpperCase(); presets[numPresets].text = txt;
     numPresets++;
   }
   if (numPresets == 0) defaultPresets();
@@ -481,7 +487,9 @@ void fxType(uint32_t t) {
   if (t < typeEnd) {
     int n = t / per;
     fxStage = FX_RUN; fxProg = msgLen ? min(1.0f, (float)n / msgLen) : 1;
-    int off = msgLen < NCH ? centerOff(msgLen, NCH) : max(0, n + 1 - NCH);
+    // Fits (<= NCH): fixed, same position as the hold phase. Longer: follow the cursor, but never
+    // past the hold offset, so the last character doesn't cause a one-step shift.
+    int off = msgLen <= NCH ? centerOff(msgLen, NCH) : constrain(n + 1 - NCH, 0, msgLen - NCH);
     for (int i = 0; i < NCH; i++) {
       int idx = off + i;
       fb[i] = (idx >= 0 && idx < n) ? msgG[idx] : ((idx == n && (t / 200) % 2 == 0) ? SD : 0);
@@ -567,6 +575,15 @@ void fxSpin(uint32_t t) {
   else drawWindow(msgG, msgLen, 1, (NCH - 2), -(NCH - 2) + (int)((t / stepMs()) % (msgLen + (NCH - 2))));
 }
 void fxBlink(uint32_t t) { if ((t % 1000) < 650) fxStatic(t); else { fxStage = FX_BLANK; clearFb(); } }
+// FADE: the text stays put while the displays' own brightness (HT16K33 dimming) swells and fades,
+// from dim up to the brightness setting. The speed setting sets the breathing rate.
+void fadeStep(uint32_t t) {
+  uint32_t period = (11 - st.speed) * 400 + 1200;                // 1.6 s (fast) .. 5.2 s (slow)
+  fadeW = (1 - cosf(t % period * 6.2832f / period)) / 2;         // 0 -> 1 -> 0, starts dim
+  fadeBri = (uint8_t)(fadeW * st.brightness + 0.5f);
+}
+void fxFade(uint32_t t) { fxStatic(t); fadeStep(t); }
+void fxSpinFade(uint32_t t) { fxSpin(t); fadeStep(t); }          // spinners on the ends + breathing brightness
 
 void drawContent(uint32_t now) {
   bool idle = st.idleFace && curMode != M_FACE &&
@@ -597,6 +614,8 @@ void drawContent(uint32_t now) {
     case M_SCAN:    fxScan(t); break;
     case M_SPIN:    fxSpin(t); break;
     case M_BLINK:   fxBlink(t); break;
+    case M_FADE:    fxFade(t); break;
+    case M_SPINFADE: fxSpinFade(t); break;
     default:        fxScroll(t); break;
   }
 }
@@ -613,6 +632,7 @@ void activity() {
 void setContent(const String& text, uint8_t mode, uint32_t color, int presetIdx, bool notify) {
   if (curMode != M_FACE) { prevText = curText; prevMode = curMode; prevColor = curColor; prevPreset = curPreset; }
   curText = text.length() > MAX_TEXT ? text.substring(0, MAX_TEXT) : text;
+  curText.toUpperCase();
   curMode = mode < M_COUNT ? mode : M_SCROLL;
   curColor = color & 0xFFFFFF; curPreset = presetIdx;
   msgLen = compile(curText, msgG, MAXG);
@@ -635,9 +655,28 @@ void drawUi(uint32_t now) {
   int cycle = uiLen - NCH + 10, k = ((now - uiStart) / 180) % cycle;
   drawWindow(uiG, uiLen, 0, NCH, constrain(k - 5, 0, uiLen - NCH));
 }
+// Info screens: either one string (scrolls if long) or several "pages" shown one at a time.
+String   infoPg[8]; int infoPgN = 0; uint32_t infoStart = 0;
+uint32_t pageMs(const String& s) { return s.length() <= NCH ? 2500 : (uint32_t)(s.length() - NCH + 10) * 180 + 500; }
 void showInfo(const String& s) {
+  infoPgN = 0;
   setUi(s);
   infoUntil = millis() + max(2500, (uiLen + NCH) * 180);
+}
+void showInfoPages(const String* pg, int n) {
+  infoPgN = min(n, 8); uint32_t tot = 0;
+  for (int i = 0; i < infoPgN; i++) { infoPg[i] = pg[i]; infoPg[i].toUpperCase(); tot += pageMs(infoPg[i]); }
+  infoStart = millis(); infoUntil = infoStart + tot;
+}
+void drawInfo(uint32_t now) {
+  if (!infoPgN) { drawUi(now); return; }
+  uint32_t t = now - infoStart; int i = 0;
+  while (i < infoPgN - 1 && t >= pageMs(infoPg[i])) { t -= pageMs(infoPg[i]); i++; }
+  setUi(infoPg[i]); drawUi(now);
+}
+void showConnInfo() {                 // network details, one item per page
+  if (apMode) { const String p[] = { "AP", apName, "PW", AP_PASSWORD, ipStr }; showInfoPages(p, 5); }
+  else        { const String p[] = { "IP", ipStr }; showInfoPages(p, 2); }
 }
 
 // ============================================================================
@@ -762,7 +801,7 @@ void onClick() {
     case UI_BROWSE: ui = UI_NORMAL; applyPreset(browseIdx); break;
     case UI_MENU:
       if (menuIdx == MI_EXIT) { exitMenu(); break; }
-      if (menuIdx == MI_IP) { exitMenu(); showInfo((apMode ? "AP " + apName + " " : String("IP ")) + ipStr); break; }
+      if (menuIdx == MI_IP) { exitMenu(); showConnInfo(); break; }
       if (menuIdx == MI_FACE) menuFace = curMode == M_FACE ? faceFromName(curText) : 0;
       ui = UI_EDIT; lastAdjust = millis(); break;
     case UI_EDIT:
@@ -801,7 +840,7 @@ void pollEncoder(uint32_t now) {
     if (!longFired && now - pressStart > 700) { longFired = true; onLongPress(); }
     if (!vlongFired && now - pressStart > 4000) {
       vlongFired = true; ui = UI_NORMAL;
-      showInfo((apMode ? "AP " + apName + " PW " AP_PASSWORD " " : String("IP ")) + ipStr);
+      showConnInfo();
     }
   }
   if (!pressed && btnDown) {
@@ -1076,11 +1115,13 @@ void ringContent(uint32_t now) {
       if (fxStage == FX_RUN) { rFill(scaleC(c, 0.05f)); rMirror(fxPos * (RING_N / 2), c); }
       else rFill(scaleC(c, glow));
       break;
-    case M_SPIN: {                                                          // same speed as the end spinners
+    case M_SPIN: case M_SPINFADE: {                                         // same speed as the end spinners
       float p = (float)t / (stepMs() / 3 + 40) * RING_N / 8;
-      rFill(scaleC(c, 0.08f)); rComet(p, 1, 4, c); rComet(p + RING_N / 2, 1, 4, c);
+      uint32_t cs = curMode == M_SPINFADE ? scaleC(c, 0.08f + 0.92f * fadeW) : c;   // spinfade: breathes too
+      rFill(scaleC(cs, 0.08f)); rComet(p, 1, 4, cs); rComet(p + RING_N / 2, 1, 4, cs);
       break; }
     case M_BLINK: rFill(c); break;                                          // blank half handled above
+    case M_FADE:  rFill(scaleC(c, 0.08f + 0.92f * fadeW)); break;           // breathes with the displays
     default:                                                                // static
       rFill(scaleC(c, glow)); rComet(now / 400.0f, 1, 3, c);
   }
@@ -1148,17 +1189,18 @@ void updateRing(uint32_t now) {
 // ============================================================================
 const char PAGE[] PROGMEM = R"rawliteral(<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>MutexSign</title><style>
-:root{--bg:#0d0f12;--card:#161a20;--fg:#e9ecef;--mut:#8b939e;--acc:#39ff88;--ln:#2a3039}
+:root{--bg:#080604;--card:#151009;--fg:#fff3d9;--mut:#d1ad70;--acc:#ffb000;--ln:#5a4420}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{padding:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 #prev{font-family:ui-monospace,monospace;font-size:30px;letter-spacing:6px;background:#000;color:var(--acc);
-padding:8px 16px;border-radius:10px;white-space:pre;text-shadow:0 0 10px var(--acc);border:1px solid #1c3}
+padding:8px 16px;border-radius:10px;white-space:pre;text-shadow:0 0 10px var(--acc);border:1px solid var(--acc)}
 #info{color:var(--mut);font-size:13px}
 main{display:grid;gap:12px;padding:0 12px 24px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
 section{background:var(--card);border-radius:14px;padding:14px;border:1px solid var(--ln)}
+#txt,.pr input:first-child{text-transform:uppercase}
 h2{font-size:12px;text-transform:uppercase;color:var(--mut);margin:0 0 10px;letter-spacing:1.5px}
-input,select,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--ln);background:#0f1216;color:var(--fg)}
-button{cursor:pointer;background:#222831}button.p{background:var(--acc);color:#000;border:0;font-weight:600}
+input,select,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--ln);background:#0c0904;color:var(--fg)}
+button{cursor:pointer;background:#2b2010}button.p{background:var(--acc);color:#000;border:0;font-weight:600}
 input[type=color]{padding:2px;width:44px;height:38px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}.grow{flex:1;min-width:120px}
 .chips button{margin:3px;border-left:4px solid}
@@ -1203,7 +1245,7 @@ $('info').textContent=(S.ap?'Access point mode · ':'')+S.ip+' · '+S.mode;
 $('tleft').textContent=S.timerLeft?'Remaining '+Math.floor(S.timerLeft/60)+'m '+(S.timerLeft%60)+'s':''}
 function render(){quick();$('mode').outerHTML=sel(S.modes,S.mode,'id=mode class=grow');
 $('quick').innerHTML=S.presets.map((p,i)=>`<button style="border-left-color:${p.c}" onclick="go('/api/preset',{i:${i}})">${esc(p.t)}</button>`).join('');
-$('faces').innerHTML=S.faces.map(f=>`<button style="border-left-color:#39f" onclick="go('/api/face',{e:'${f}'})">${f}</button>`).join('');
+$('faces').innerHTML=S.faces.map(f=>`<button style="border-left-color:var(--mut)" onclick="go('/api/face',{e:'${f}'})">${f}</button>`).join('');
 P=S.presets.map(p=>({...p}));renderP();renderR();
 $('sets').innerHTML=SF.map(([k,l,a,b,t])=>{const v=S.s[k];
 if(t=='b')return `<label><input type=checkbox id=s_${k} ${v?'checked':''}> ${l}</label>`;
@@ -1213,7 +1255,7 @@ return `<label><span>${l}</span><input type=range id=s_${k} min=${a} max=${b} va
 <label><span>Hostname (.local)</span><input id=s_host class=grow value="${esc(S.s.host)}"></label>
 <label><span>Access key (blank = none)</span><input id=s_key class=grow placeholder="unchanged"></label>`;
 $('aponly').checked=!!S.s.apOnly}
-function renderR(){$('rings').innerHTML=S.ringModes.map((m,i)=>`<button style="border-left-color:${i==S.s.ringMode?'var(--acc)':'#444'}" onclick="ring({m:'${m}'})">${m}</button>`).join('');
+function renderR(){$('rings').innerHTML=S.ringModes.map((m,i)=>`<button style="border-left-color:${i==S.s.ringMode?'var(--acc)':'var(--ln)'}" onclick="ring({m:'${m}'})">${m}</button>`).join('');
 $('rbri').value=$('rbo').value=S.s.ringBright}
 async function ring(d){await go('/api/ring',d);renderR()}
 function renderP(){$('plist').innerHTML=P.map((p,i)=>`<div class=pr><input value="${esc(p.t)}" maxlength=64 oninput="P[${i}].t=this.value">
@@ -1376,14 +1418,15 @@ void startWifi() {
     WiFi.setSleep(true);     // modem sleep between beacons (the core's default; kept explicit)
     WiFi.begin(ssid.c_str(), pass.c_str());
     uint32_t t0 = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) { bootFrame(millis() - t0, "WIFI"); delay(20); }
+    // keep "WIFI" on screen for at least 2.5 s even if it connects instantly
+    while ((WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) || millis() - t0 < 2500) { bootFrame(millis() - t0, "WIFI"); delay(20); }
   }
   if (WiFi.status() == WL_CONNECTED) {
     apMode = false; ipStr = WiFi.localIP().toString();
     configTzTime(st.tz, "pool.ntp.org", "time.nist.gov");
   } else {
     apMode = true;
-    char nm[24]; snprintf(nm, sizeof nm, "MutexSign-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
+    char nm[24]; snprintf(nm, sizeof nm, "MUTEXSIGN-%04X", (unsigned)(ESP.getEfuseMac() & 0xFFFF));
     apName = nm;
     WiFi.mode(WIFI_AP); WiFi.softAP(nm, AP_PASSWORD);
     ipStr = WiFi.softAPIP().toString();
@@ -1471,9 +1514,10 @@ void setup() {
   if (pix.begin(ENC_ADDR)) { pixOK = true; pix.setBrightness(255); pix.show(); }
   ringBegin();
 
-  // lamp test sweep
-  for (int i = 0; i < NCH; i++) { clearFb(); fb[i] = SALL | SDP; render(); delay(45); }
-  for (int i = NCH - 1; i >= 0; i--) { clearFb(); fb[i] = SALL | SDP; render(); delay(45); }
+  // lamp test sweep: characters light up one by one and stay on, then switch off from the right
+  clearFb();
+  for (int i = 0; i < NCH; i++) { fb[i] = SALL | SDP; render(); delay(45); }
+  for (int i = NCH - 1; i >= 0; i--) { fb[i] = 0; render(); delay(45); }
 
   startWifi();
   setupServer();
@@ -1481,7 +1525,7 @@ void setup() {
   String ct = prefs.getString("ctext", "");
   if (ct.length()) setContent(ct, prefs.getUChar("cmode", M_SCROLL), prefs.getUInt("ccolor", 0xFF0000), prefs.getInt("cpre", -1), false);
   else applyPreset(1);
-  showInfo((apMode ? "AP " + apName + " PW " AP_PASSWORD " " : String("IP ")) + ipStr);
+  showConnInfo();
 }
 
 void loop() {
@@ -1494,6 +1538,7 @@ void loop() {
   lastFrame = now;
   checkSchedule(now);
 
+  fadeBri = 255;
   if (ui == UI_MENU || ui == UI_EDIT) drawMenu(now);
   else if (ui == UI_BROWSE) {
     Preset& p = presets[browseIdx];
@@ -1501,13 +1546,14 @@ void loop() {
     s.toUpperCase(); setUi(s); drawUi(now);
     fb[NCH - 1] |= SDP;                                       // dot = "preview, click to apply"
   }
-  else if (now < infoUntil) drawUi(now);
+  else if (now < infoUntil) drawInfo(now);
   else if (offHours && now > wakeUntil) clearFb();
   else if (now < timerDoneUntil) { if ((now / 300) % 2) { setUi("TIME UP!"); drawUi(now); } else clearFb(); }
   else if (tmrEnd) drawTimer(now);
   else drawContent(now);
 
   if (testAll) for (int i = 0; i < NCH; i++) fb[i] = SALL | SDP;   // segment test
+  setBri(fadeBri == 255 || testAll ? st.brightness : fadeBri);     // FADE modulates the display brightness
   render();
   updateLed(now);
   updateRing(now);
