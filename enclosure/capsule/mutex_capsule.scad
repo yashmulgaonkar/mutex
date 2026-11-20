@@ -170,7 +170,7 @@ diff_loc_h = 1.0;   //   counterbore in the carrier's hub, so the two stay conce
 
 /* [Monitor clip] */
 monitor_depth = 20;  // thickness of your monitor's top edge (measure!)
-front_lip     = 8;   // how far the clip reaches down the front
+front_lip     = 5;   // how far the clip reaches down the front
 back_lip      = 30;  // how far it reaches down the back
 clip_wall     = 3;
 clip_len      = 120;
