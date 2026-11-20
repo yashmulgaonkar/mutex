@@ -140,7 +140,9 @@ cap_screw_a= [90, 270, 320]; // left-cap screws (same M2 x 6 flat head): top, bo
                              // (straight back is taken by the USB-C opening)
 cap_screw_x= 3;     // their position along X, into the cap's spigot (behind the ESP32 pocket floor)
 ring_t     = 3;     // light-ring thickness when there is no NeoPixel ring
-knob_gap   = 0.8;   // gap between ring and knob (allows the push-click)
+knob_gap   = 1.6;   // clearance between the carrier's outer face and the diffuser (the diffuser is joined to the
+                    // knob and rides with it): this is the push-click travel. 1.6 = the old 0.8 + the 0.8 mm
+                    // taken off the diffuser, so the knob stays where it was on the shaft
 explode    = 25;    // spacing in the exploded view
 
 /* [NeoPixel ring (Adafruit 1643, 12 LEDs)] */
@@ -163,10 +165,21 @@ neo_groove  = 1.0;  // solder-blob relief groove under the pad circle, depth int
 neo_latch_span = 26;          // latch beam length, degrees of arc
 neo_clr    = 0.4;   // diffuser chamber inner wall sits this far inside the ring's ID
 diff_front = 2;     // diffuser wall in front of the LEDs
-diff_extra = 3;     // extra diffuser thickness (light-mixing space above the LEDs): 5.3 -> 8.3 mm
+diff_extra = 2.2;   // extra diffuser thickness (light-mixing space above the LEDs): 5.3 -> 7.5 mm
 diff_hole  = 18;    // centre hole (clears the encoder body and the knob boss)
-diff_loc_r = 10.5;  // centring spigot on the diffuser's back (outer radius); drops into a
-diff_loc_h = 1.0;   //   counterbore in the carrier's hub, so the two stay concentric while gluing
+diff_loc_r = 10.5;  // spigot on the diffuser's back (outer radius); drops into a counterbore in the
+diff_loc_h = 1.0;   //   carrier's hub during the last part of a push-click and guides the turning diffuser
+// Friction-fit joint between diffuser and knob: a ring of 8 arc segments on the diffuser's front face pushes into
+// the knob's skirt bore (radius R - wall). The gaps between the arcs straddle the knob's 8 spokes, which key the
+// joint. Small crush ribs on each arc give the interference; tune fit_clr in 0.05 mm steps after a test print.
+plug_h      = 2.5;  // plug height (the knob's straight bore is knob_cyl long)
+plug_wall   = 1.2;  // plug wall thickness
+plug_slot_w = 2.6;  // slot between arcs (the knob's spokes are knob_rib_t thick)
+fit_clr     = 0.2;  // plug radius is this far inside the knob bore (same value as the end-cap press fit)
+fit_crush   = 0.35; // crush ribs stand this far proud of the plug: interference at the rib tips = fit_crush - fit_clr
+plug_ribs   = 3;    // crush ribs per arc
+knob_rib_t  = 1.6;  // thickness of the knob's stiffening spokes
+knob_lead   = 0.4;  // lead-in chamfer at the knob's bore mouth (counters first-layer squash on the bed)
 
 /* [Monitor clip] */
 monitor_depth = 20;  // thickness of your monitor's top edge (measure!)
@@ -215,9 +228,9 @@ neo_seat_x   = bulk_x0 + bulkhead;             // ring seat floor
 neo_r_seat   = neo_od / 2 + neo_seat_clr;      // seat wall = latch beams' inner face
 neo_r_out    = neo_r_seat + latch_t + latch_gap;
 Lb           = bulk_x0 + plate_t;              // carrier outer face (overall body length)
-ring_x0      = Lb;
-ring_len     = neo_ring ? neo_t + 0.3 + diff_front + diff_extra : ring_t;   // diffuser thickness (8.3)
-knob_x0      = Lb + ring_len + knob_gap;
+ring_x0      = Lb + knob_gap;                  // diffuser back face: knob_gap off the carrier (it rides with the knob)
+ring_len     = neo_ring ? neo_t + 0.3 + diff_front + diff_extra : ring_t;   // diffuser thickness (7.5)
+knob_x0      = ring_x0 + ring_len;             // the knob rim sits on the diffuser's front face
 shaft_tip_x  = board_front_x + shaft_len;
 tip_local    = shaft_tip_x - knob_x0;          // shaft engagement inside the knob
 bush_in_knob = board_front_x + enc_body_h + enc_bush_h - knob_x0;   // collar reach into the knob
@@ -250,6 +263,12 @@ assert(win_seat <= spigot && win_seat > 2, "win_seat must lie inside the spigot.
 assert(!neo_ring || neo_r_out < R - 1, "NeoPixel ring latches too close to the carrier's rim.");
 assert(!neo_ring || (diff_loc_r + 0.15 < neo_id / 2 - neo_seat_clr - 0.7 && diff_loc_r > diff_hole / 2 + 1),
        "Diffuser centring spigot doesn't fit the carrier hub: adjust diff_loc_r.");
+assert(knob_gap >= 1.0, "knob_gap is the push-click travel (carrier to diffuser): keep it at 1.0 mm or more.");
+assert(!neo_ring || plug_h <= knob_cyl - 0.5, "Diffuser plug is longer than the knob's straight bore.");
+assert(!neo_ring || plug_slot_w > knob_rib_t + 0.6, "Plug slots too narrow for the knob's spokes.");
+assert(!neo_ring || fit_crush > fit_clr && fit_crush - fit_clr < 0.4, "Plug crush ribs: interference should be between 0 and 0.4 mm.");
+assert(!neo_ring || ring_x0 + ring_len - diff_front > neo_seat_x + neo_t + 0.5,
+       "Diffuser chamber roof is too close to the NeoPixel LEDs.");
 assert(cap_screw_x - car_csk_d / 2 > 0.5 && cap_screw_x + car_screw_d / 2 < mcu_x0 - 0.3
        && cap_screw_x + car_csk_d / 2 < spigot,
        "Left-cap screws must sit in the spigot, behind the ESP32 pocket floor: adjust cap_screw_x.");
@@ -576,18 +595,45 @@ module mcu_brace() {
 }
 
 // ----------------------------------------------------------------------------
-//  LIGHT RING (clear PETG) — glue to the carrier's outer face
+//  LIGHT RING / DIFFUSER (translucent PETG) — joined to the knob, not to the carrier
 //  With neo_ring: an open light-mixing chamber over the LEDs (the ring itself
-//  is held by the carrier's latches), 2 mm walls front and outside, and a
-//  centring spigot on the back that drops into the carrier's hub. Print front
-//  face down (spigot up).
+//  is held by the carrier's latches), 2 mm walls front and outside. The diffuser
+//  is friction-fitted onto the knob (plug ring on its front face, see diff_plug)
+//  and rides with it: the pair is then pressed onto the encoder shaft, leaving
+//  knob_gap between the carrier and the diffuser's back face for the push-click.
+//  The spigot on the back drops into the carrier's hub counterbore at the end of a
+//  push and guides the turning diffuser.
+//  PRINT BACK FACE DOWN (spigot on the bed, plug up): the 2 mm roof bridges the
+//  8.7 mm gap between hub and outer wall, and the outer wall starts 1 mm above the
+//  bed (the spigot stands proud), so use build-plate-only supports under it.
 // ----------------------------------------------------------------------------
+// Friction-fit plug: 8 arc segments on the front face, slots centred on the knob's 8 spokes
+// (angles are multiples of 45 deg, same convention as xsweep: 0 = +Y), with crush ribs.
+module diff_plug() {
+    r_o   = R - wall - fit_clr;
+    r_i   = r_o - plug_wall;
+    slot  = 2 * asin(plug_slot_w / 2 / r_o);              // slot width as an angle
+    for (k = [0 : 7]) {
+        a0 = k * 45 + slot / 2;
+        a1 = (k + 1) * 45 - slot / 2;
+        translate([ring_len - eps, 0, 0]) {
+            xsweep([[r_i, 0], [r_o, 0], [r_o, plug_h - 0.4], [r_o - 0.4, plug_h], [r_i, plug_h]], a0, a1);   // lead-in chamfer on the tip
+            for (j = [1 : plug_ribs]) {
+                a = a0 + (a1 - a0) * j / (plug_ribs + 1);
+                rr = r_o + fit_crush - 0.4;                // 0.8 mm round rib: tip sits fit_crush proud
+                translate([0, rr * cos(a), rr * sin(a)]) rotate([0, 90, 0]) cylinder(d = 0.8, h = plug_h - 0.6, $fn = 16);
+            }
+        }
+    }
+}
+
 module light_ring() {
     if (neo_ring)
         difference() {
             union() {
                 xcyl(2 * R, ring_len);                                   // round, like the knob
-                translate([-diff_loc_h, 0, 0]) xring(diff_hole / 2, diff_loc_r, diff_loc_h + eps);   // centring spigot
+                translate([-diff_loc_h, 0, 0]) xring(diff_hole / 2, diff_loc_r, diff_loc_h + eps);   // guide spigot
+                diff_plug();                                             // friction-fit plug into the knob
             }
             // light-mixing chamber, open toward the carrier
             translate([-eps, 0, 0]) difference() {
@@ -611,7 +657,9 @@ module neopixel_ring() {
 }
 
 // ----------------------------------------------------------------------------
-//  KNOB (rotating end cap) — local X starts at the face toward the ring
+//  KNOB (rotating end cap, opaque) — local X starts at the face toward the ring.
+//  The diffuser's plug ring pushes into the straight bore (radius R - wall) of the
+//  first knob_cyl mm; a small lead-in chamfer at the bore mouth guides it in.
 // ----------------------------------------------------------------------------
 module knob_solid(r, cyl_len, dome_len) {
     intersection() {
@@ -635,10 +683,12 @@ module knob() {
                 union() {
                     xcyl(shaft_d + 5, knob_cyl + knob_dome);                    // shaft boss
                     for (a = [0, 45, 90, 135]) rotate([a, 0, 0])                 // stiffening ribs
-                        translate([0, -0.8, -R]) cube([knob_cyl + knob_dome, 1.6, 2 * R]);
+                        translate([0, -knob_rib_t / 2, -R]) cube([knob_cyl + knob_dome, knob_rib_t, 2 * R]);
                 }
             }
         }
+        // lead-in chamfer at the bore mouth (annular wedge; the diffuser's plug ring goes in here)
+        xsweep([[R - wall - eps, -eps], [R - wall + knob_lead, -eps], [R - wall - eps, knob_lead + eps]]);
         // clearance for the encoder's threaded collar, if it reaches the knob
         if (bush_in_knob > 0) translate([-1, 0, 0]) xcyl(enc_bush_d + 1, bush_in_knob + 1.5);
         // D-shaft socket, open toward the encoder
@@ -739,8 +789,8 @@ module print_plate() {
     translate([70, 0, flat]) rotate([90, 0, 0]) left_cap();
     // ESP32 cross-brace: top face down
     translate([70, -45, brace_x1]) rotate([0, 90, 0]) translate([0, -brace_yc, 0]) mcu_brace();
-    // light ring flat
-    translate([0, 60, ring_len]) rotate([0, 90, 0]) light_ring();
+    // diffuser: back face down (spigot tip on the bed, plug up); needs build-plate supports under the outer wall
+    translate([0, 60, diff_loc_h]) rotate([0, -90, 0]) light_ring();
     // knob: open face down, dome up
     translate([70, 60, 0]) rotate([0, -90, 0]) knob();
     // clip on its end (use supports under the cradles)

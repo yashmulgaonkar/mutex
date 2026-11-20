@@ -14,6 +14,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
+#include <DNSServer.h>
 #include <Preferences.h>
 #include <time.h>
 #include <Adafruit_LEDBackpack.h>
@@ -127,6 +128,8 @@ Adafruit_seesaw ss(&I2C_BUS);
 seesaw_NeoPixel pix(1, ENC_NEO_PIN, NEO_GRB + NEO_KHZ800, &I2C_BUS);
 bool encOK = false, pixOK = false;
 WebServer server(80);
+DNSServer dns;
+bool dnsOn = false;          // captive-portal DNS runs only while we are an access point
 Preferences prefs;
 String webKey, ipStr, apName;
 bool apMode = false;
@@ -1392,8 +1395,13 @@ void setupServer() {
   server.on("/api/ring", handleRing);
   server.on("/api/settings", handleSettings);
   server.on("/api/wifi", handleWifi);
-  server.onNotFound([]() {                       // captive-portal-ish: send everything home
-    server.sendHeader("Location", "/"); server.send(302, "text/plain", "");
+  // Captive portal: in AP mode the DNS catch-all (see startWifi) sends every hostname here, and phones'
+  // connectivity checks (/generate_204, /hotspot-detect.html, /connecttest.txt, ...) land in this handler,
+  // so they get redirected to the portal and the phone opens it as a "sign in to network" page.
+  server.onNotFound([]() {
+    server.sendHeader("Location", apMode ? "http://" + ipStr + "/" : String("/"));
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(302, "text/plain", "");
   });
   server.begin();
 }
@@ -1430,6 +1438,8 @@ void startWifi() {
     apName = nm;
     WiFi.mode(WIFI_AP); WiFi.softAP(nm, AP_PASSWORD);
     ipStr = WiFi.softAPIP().toString();
+    dns.start(53, "*", WiFi.softAPIP());         // captive portal: answer every hostname with our address
+    dnsOn = true;
   }
   if (MDNS.begin(st.host)) MDNS.addService("http", "tcp", 80);
   Serial.printf("[MutexSign] %s %s  http://%s.local\n", apMode ? "AP" : "IP", ipStr.c_str(), st.host);
@@ -1531,6 +1541,7 @@ void setup() {
 void loop() {
   static uint32_t lastEnc = 0, lastFrame = 0;
   uint32_t now = millis();
+  if (dnsOn) dns.processNextRequest();
   server.handleClient();
   handleSerial();
   if (now - lastEnc >= 10) { lastEnc = now; pollEncoder(now); }

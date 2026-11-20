@@ -94,9 +94,15 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   round, so the seat has a floor where the ring overhangs the flat front): three
   arc snap latches at 30/150/270 deg, barbs flush with the face so the carrier still prints face down; the hub
   inside the ring's ID centres it. The seat adds 2.3 mm to the carrier (`plate_t` = `bulkhead` + `neo_seat`).
-- The round `light_ring` diffuser (`neo_ring = true`) is 8.3 mm (5.3 + `diff_extra` 3): an open light-mixing
-  chamber over the LEDs, 2 mm front and outer walls; print white/clear PETG. A 1 mm centring spigot on its
-  back drops into a counterbore in the carrier hub, so it stays concentric while gluing.
+- The round `light_ring` diffuser (`neo_ring = true`) is 7.5 mm (5.3 + `diff_extra` 2.2; it was 8.3, shortened
+  0.8 so the encoder button can be pressed): an open light-mixing chamber over the LEDs, 2 mm front and outer
+  walls; print in translucent PETG (the knob is opaque orange). It is **joined to the knob, not the carrier**: a
+  plug ring of 8 arc segments on its front face (`diff_plug`: `plug_h` 2.5, `fit_clr` 0.2, crush ribs `fit_crush`
+  0.35, slots straddling the knob's 8 spokes) pushes into the knob's skirt bore. The pair then friction-fits onto
+  the encoder shaft and rides with it; `knob_gap` (1.6 mm) is the clearance between the carrier face and the
+  diffuser's back = the push-click travel (the knob stays where it was). The 1 mm spigot on its back only guides
+  it into the carrier hub's counterbore at the end of a push. **Print back face down** (spigot on the bed, plug up):
+  needs build-plate supports under the outer wall and a bridged 2 mm chamber roof.
 - Its 3 wires (DIN, GND, 5V) go through dedicated slots in the seat floor at `neo_pad_a` (59/301/240 deg,
   measured from Adafruit's photo), which also clocks the ring; a 1 mm groove under the pad circle clears
   the solder joints. Firmware: ring DIN on ESP32 GPIO6 (`RING_PIN`), Adafruit NeoPixel library; `RING_OFFSET` /
@@ -111,7 +117,7 @@ This repository is **CC BY-NC-SA 4.0**. Full terms: `LICENSE`. Attribution text:
   they can't reach the NeoPixel ring), slide the carrier into the body's right end (spigot keyed by the flat
   front), fix it with 3 M2 x 6 flat-head screws through countersunk holes in the body wall (back, top,
   bottom; heads flush). The top one goes into the display PCB stop block.
-- Then snap the NeoPixel ring into the carrier's seat, glue the diffuser on, then fit the knob.
+- Then snap the NeoPixel ring into the carrier's seat, press the diffuser onto the knob, and press that pair onto the shaft.
 - The display PCB end stops on the carrier (top/bottom) stay 0.4 mm outside the encoder PCB (no overhang, so
   the encoder drops straight onto its standoffs) and catch the outer 0.87 mm of the last display PCB's edges.
 - Heat-set bosses moved behind the display PCB (`boss_y = 5`): in front of it they blocked the 27.94 mm PCB's
